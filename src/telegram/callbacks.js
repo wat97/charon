@@ -12,6 +12,8 @@ import {
   mainMenuText,
   walletsText,
   positionsText,
+  positionsTextV2,
+  positionsKeyboardV2,
   candidateButtons,
   sendTpSlDefaults,
   strategyMenuText,
@@ -53,6 +55,7 @@ export async function handleCallback(query) {
   if (data === 'menu:strategy') return editMenuMessage(query, strategyMenuText(), strategyKeyboard());
   if (data === 'menu:wallets') return editMenuMessage(query, walletsText(), navKeyboard());
   if (data === 'menu:positions') return editMenuMessage(query, positionsText(), navKeyboard());
+  if (data === 'menu:positionsv2') return editMenuMessage(query, positionsTextV2(), positionsKeyboardV2());
   if (data === 'menu:pnl') {
     const { sendPnl } = await import('./send.js');
     return sendPnl(chatId, query);

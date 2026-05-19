@@ -1,6 +1,6 @@
 import { escapeHtml, fmtPct, fmtSol, fmtUsd, short } from '../format.js';
 import { numSetting, boolSetting, setting, activeStrategy, allStrategies } from '../db/settings.js';
-import { openPositionCount, tradingMode, allPositions } from '../db/positions.js';
+import { openPositionCount, tradingMode, allPositions, openPositions } from '../db/positions.js';
 import { savedWallets } from '../enrichment/wallets.js';
 import { gmgnStatusText } from '../enrichment/gmgn.js';
 import { formatPosition } from './format.js';
@@ -19,6 +19,9 @@ export function menuKeyboard() {
           { text: 'Wallets', callback_data: 'menu:wallets' },
           { text: 'Positions', callback_data: 'menu:positions' },
           { text: 'PnL', callback_data: 'menu:pnl' },
+        ],
+        [
+          { text: '📍 Positions v2', callback_data: 'menu:positionsv2' },
         ],
         [
           { text: 'PnL Summary', callback_data: 'menu:pnlsummary' },
@@ -194,6 +197,33 @@ export function positionsText() {
   const rows = allPositions(12);
   const text = rows.length ? rows.map(formatPosition).join('\n\n') : 'No dry-run positions yet.';
   return `📍 <b>Positions</b>\n\n${text}`;
+}
+
+export function positionsTextV2() {
+  const maxPos = activeStrategy().max_open_positions ?? numSetting('max_open_positions', 3);
+  const rows = openPositions().slice(0, maxPos);
+  if (!rows.length) return `📍 <b>Positions v2</b>\n\nNo open positions.`;
+  const lines = rows.map(r => {
+    const symbol = escapeHtml(r.symbol || short(r.mint));
+    const pnl = r.pnl_percent != null ? Number(r.pnl_percent) : (r.high_water_mcap && r.entry_mcap ? (Number(r.high_water_mcap)/Number(r.entry_mcap)-1)*100 : null);
+    const pnlText = pnl != null ? fmtPct(pnl) : 'LIVE';
+    const arrow = pnl == null ? '⚪' : (pnl >= 0 ? '🟢' : '🔴');
+    return `${arrow} <b>${symbol}</b> · <b>${pnlText}</b>`;
+  });
+  return `📍 <b>Positions v2</b> (${rows.length}/${maxPos})\n\n${lines.join('\n')}`;
+}
+
+export function positionsKeyboardV2() {
+  const maxPos = activeStrategy().max_open_positions ?? numSetting('max_open_positions', 3);
+  const rows = openPositions().slice(0, maxPos);
+  const buttons = rows.map(r => [{
+    text: `${r.symbol || short(r.mint)} · open`,
+    callback_data: `pos:${r.id}`,
+  }]);
+  buttons.push([{ text: '🔄 Refresh', callback_data: 'menu:positionsv2' }]);
+  buttons.push([{ text: '📋 All Positions', callback_data: 'menu:positions' }]);
+  buttons.push([{ text: 'Back', callback_data: 'menu:main' }]);
+  return { reply_markup: { inline_keyboard: buttons } };
 }
 
 export function strategyMenuText() {
