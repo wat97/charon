@@ -1,6 +1,7 @@
 import http from 'http';
 import zlib from 'zlib';
 import Database from 'better-sqlite3';
+import { WebSocketServer } from 'ws';
 
 const HOST = process.env.CHARON_DASHBOARD_HOST || '127.0.0.1';
 const PORT = Number(process.env.CHARON_DASHBOARD_PORT || 20120);
@@ -943,53 +944,82 @@ function positionsPage() {
       if (prevBtn) prevBtn.addEventListener('click', () => { if (currentPage > 1) { currentPage--; renderPage(); } });
       if (nextBtn) nextBtn.addEventListener('click', () => { currentPage++; renderPage(); });
 
+      function applyRealtimePayload(payload){
+        const byMint = payload && payload.by_mint ? payload.by_mint : {};
+        cards.forEach((el) => {
+          const mint = el.dataset.mint || '';
+          const rt = byMint[mint];
+          if (!rt) return;
+
+          const pnl = Number(rt.realtime_pnl_percent);
+          const mcap = Number(rt.est_current_mcap);
+          const isOpen = el.dataset.status === 'open';
+
+          if (isOpen && Number.isFinite(pnl)) {
+            const pnlClass = pnl >= 0 ? 'up' : 'dn';
+            const pnlHtml = '<div>PnL %: <b class="' + pnlClass + '">' + (pnl >= 0 ? '+' : '') + pnl.toFixed(2) + '%</b></div>';
+            const meta = el.querySelector('.meta');
+            if (meta) {
+              const existing = meta.querySelector('[data-rt-pnl]');
+              if (existing) existing.innerHTML = pnlHtml;
+              else {
+                const wrap = document.createElement('div');
+                wrap.setAttribute('data-rt-pnl', '1');
+                wrap.innerHTML = pnlHtml;
+                meta.appendChild(wrap);
+              }
+            }
+          }
+
+          if (Number.isFinite(mcap)) {
+            const meta = el.querySelector('.meta');
+            if (meta) {
+              const existing = meta.querySelector('[data-rt-mcap]');
+              const mcapText = '<div>Now MCAP: <b>$' + Math.round(mcap).toLocaleString('en-US') + '</b></div>';
+              if (existing) existing.innerHTML = mcapText;
+              else {
+                const wrap = document.createElement('div');
+                wrap.setAttribute('data-rt-mcap', '1');
+                wrap.innerHTML = mcapText;
+                meta.appendChild(wrap);
+              }
+            }
+          }
+        });
+      }
+
       async function refreshRealtimePnL(){
         try {
           const res = await fetch('/api/realtime-prices', { cache: 'no-store' });
           if (!res.ok) return;
           const payload = await res.json();
-          const byMint = payload && payload.by_mint ? payload.by_mint : {};
+          applyRealtimePayload(payload);
+        } catch {}
+      }
 
-          cards.forEach((el) => {
-            const mint = el.dataset.mint || '';
-            const rt = byMint[mint];
-            if (!rt) return;
+      function connectRealtimeWs(){
+        try {
+          const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+          const ws = new WebSocket(proto + '//' + location.host + '/ws');
 
-            const pnl = Number(rt.realtime_pnl_percent);
-            const mcap = Number(rt.est_current_mcap);
-            const isOpen = el.dataset.status === 'open';
+          ws.onopen = () => {
+            try { ws.send(JSON.stringify({ type: 'get_snapshot' })); } catch {}
+          };
 
-            if (isOpen && Number.isFinite(pnl)) {
-              const pnlClass = pnl >= 0 ? 'up' : 'dn';
-              const pnlHtml = '<div>PnL %: <b class="' + pnlClass + '">' + (pnl >= 0 ? '+' : '') + pnl.toFixed(2) + '%</b></div>';
-              const meta = el.querySelector('.meta');
-              if (meta) {
-                const existing = meta.querySelector('[data-rt-pnl]');
-                if (existing) existing.innerHTML = pnlHtml;
-                else {
-                  const wrap = document.createElement('div');
-                  wrap.setAttribute('data-rt-pnl', '1');
-                  wrap.innerHTML = pnlHtml;
-                  meta.appendChild(wrap);
-                }
+          ws.onmessage = (ev) => {
+            try {
+              const msg = JSON.parse(ev.data || '{}');
+              if (msg.type === 'price_snapshot' || msg.type === 'price_update') {
+                applyRealtimePayload(msg.payload || {});
+                renderPage();
               }
-            }
+            } catch {}
+          };
 
-            if (Number.isFinite(mcap)) {
-              const meta = el.querySelector('.meta');
-              if (meta) {
-                const existing = meta.querySelector('[data-rt-mcap]');
-                const mcapText = '<div>Now MCAP: <b>$' + Math.round(mcap).toLocaleString('en-US') + '</b></div>';
-                if (existing) existing.innerHTML = mcapText;
-                else {
-                  const wrap = document.createElement('div');
-                  wrap.setAttribute('data-rt-mcap', '1');
-                  wrap.innerHTML = mcapText;
-                  meta.appendChild(wrap);
-                }
-              }
-            }
-          });
+          ws.onclose = () => {
+            // Fallback polling if WS disconnected
+            setTimeout(connectRealtimeWs, 2000);
+          };
         } catch {}
       }
 
@@ -999,10 +1029,12 @@ function positionsPage() {
         if (first) first.click();
       });
       refreshRealtimePnL();
+      connectRealtimeWs();
       setInterval(() => {
         refreshRealtimePnL();
         renderPage();
-      }, 15000);
+      }, 30000); // fallback keepalive polling only
+
     </script>
   `);
 }
@@ -1077,6 +1109,22 @@ function getCandidates(limit = 200) {
     ORDER BY id DESC
     LIMIT ?
   `).all(limit);
+}
+
+function getPositionsWsSnapshot() {
+  const rows = db.prepare(`SELECT id,status,symbol,mint,pnl_percent,updated_at_ms,opened_at_ms FROM dry_run_positions ORDER BY id DESC LIMIT 200`).all();
+  const openCount = rows.filter(r => r.status === 'open').length;
+  const closedCount = rows.filter(r => r.status === 'closed').length;
+  return { open_count: openCount, closed_count: closedCount, total: rows.length, rows };
+}
+
+function getCandidatesWsSnapshot() {
+  const rows = db.prepare(`SELECT id,mint,status,created_at_ms,updated_at_ms FROM candidates ORDER BY id DESC LIMIT 200`).all();
+  const counts = rows.reduce((acc, r) => {
+    acc[r.status] = (acc[r.status] || 0) + 1;
+    return acc;
+  }, {});
+  return { total: rows.length, counts, rows };
 }
 
 function candidatesPage() {
@@ -1259,6 +1307,90 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+const wss = new WebSocketServer({ noServer: true });
+const wsClients = new Set();
+
+function wsBroadcast(type, payload) {
+  const msg = JSON.stringify({ type, ts: Date.now(), payload });
+  for (const ws of wsClients) {
+    if (ws.readyState === ws.OPEN) {
+      try { ws.send(msg); } catch {}
+    }
+  }
+}
+
+server.on('upgrade', (req, socket, head) => {
+  try {
+    const u = new URL(req.url, `http://${HOST}:${PORT}`);
+    if (u.pathname !== '/ws') {
+      socket.destroy();
+      return;
+    }
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      wss.emit('connection', ws, req);
+    });
+  } catch {
+    socket.destroy();
+  }
+});
+
+wss.on('connection', async (ws) => {
+  wsClients.add(ws);
+  try {
+    const byMint = await getOpenRealtimeByMint();
+    ws.send(JSON.stringify({ type: 'price_snapshot', ts: Date.now(), payload: { by_mint: byMint } }));
+    ws.send(JSON.stringify({ type: 'position_snapshot', ts: Date.now(), payload: getPositionsWsSnapshot() }));
+    ws.send(JSON.stringify({ type: 'candidates_snapshot', ts: Date.now(), payload: getCandidatesWsSnapshot() }));
+  } catch {}
+
+  ws.on('message', async (raw) => {
+    let msg = null;
+    try { msg = JSON.parse(String(raw || '{}')); } catch { msg = null; }
+    if (!msg) return;
+    if (msg.type === 'ping') {
+      try { ws.send(JSON.stringify({ type: 'pong', ts: Date.now() })); } catch {}
+      return;
+    }
+    if (msg.type === 'get_snapshot') {
+      try {
+        const byMint = await getOpenRealtimeByMint();
+        ws.send(JSON.stringify({ type: 'price_snapshot', ts: Date.now(), payload: { by_mint: byMint } }));
+        ws.send(JSON.stringify({ type: 'position_snapshot', ts: Date.now(), payload: getPositionsWsSnapshot() }));
+        ws.send(JSON.stringify({ type: 'candidates_snapshot', ts: Date.now(), payload: getCandidatesWsSnapshot() }));
+      } catch {}
+      return;
+    }
+  });
+
+  ws.on('close', () => wsClients.delete(ws));
+  ws.on('error', () => wsClients.delete(ws));
+});
+
+setInterval(async () => {
+  if (!wsClients.size) return;
+  try {
+    const byMint = await getOpenRealtimeByMint();
+    wsBroadcast('price_update', { by_mint: byMint });
+  } catch {}
+}, 5000);
+
+setInterval(async () => {
+  if (!wsClients.size) return;
+  try {
+    const pos = getPositionsWsSnapshot();
+    wsBroadcast('position_update', pos);
+  } catch {}
+}, 10000);
+
+setInterval(async () => {
+  if (!wsClients.size) return;
+  try {
+    const cand = getCandidatesWsSnapshot();
+    wsBroadcast('candidates_update', cand);
+  } catch {}
+}, 15000);
+
 server.listen(PORT, HOST, () => {
   console.log(`[dashboard] Charon dashboard listening on http://${HOST}:${PORT}`);
+  console.log(`[dashboard] WebSocket endpoint ready at ws://${HOST}:${PORT}/ws`);
 });
