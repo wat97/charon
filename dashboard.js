@@ -518,30 +518,86 @@ function renderShell(title, body) {
 </html>`;
 }
 
-function buildEquityCurveSvg(history) {
+function buildEquityCurveSvg(history, summary) {
   if (history.length < 2) return `<div class='k'>Not enough closed trades yet.</div>`;
-  const w = 900, h = 160, pad = 22;
+  const w = 900, h = 240, padL = 42, padR = 18, padT = 16, padB = 32;
   let cum = 0;
-  const series = history.map((x) => {
+  const series = history.map((x, i) => {
     cum += Number(x.pnl_sol || 0);
-    return { t: x.closed_at_ms, v: cum };
+    return { i, t: x.closed_at_ms, v: cum, trade: Number(x.pnl_sol || 0) };
   });
   const max = Math.max(...series.map((s) => s.v), 0.0001);
   const min = Math.min(...series.map((s) => s.v), -0.0001);
-  const range = Math.max(Math.abs(max), Math.abs(min), 0.05);
-  const points = series.map((s, i) => {
-    const x = pad + (i / (series.length - 1)) * (w - pad * 2);
-    const y = h / 2 - (s.v / range) * ((h - pad * 2) / 2);
-    return `${x},${y}`;
+  const range = Math.max(max - min, 0.05);
+  const yFor = (v) => padT + ((max - v) / range) * (h - padT - padB);
+  const xFor = (i) => padL + (i / Math.max(1, series.length - 1)) * (w - padL - padR);
+  const points = series.map((s) => ({ ...s, x: xFor(s.i), y: yFor(s.v) }));
+  const zero = yFor(0);
+  let peakIdx = 0; let troughIdx = 0; let peakVal = points[0].v; let worstDd = 0;
+  points.forEach((p, idx) => {
+    if (p.v > peakVal) { peakVal = p.v; peakIdx = idx; }
+    const dd = peakVal - p.v;
+    if (dd > worstDd) { worstDd = dd; troughIdx = idx; }
   });
-  const path = points.join(' ');
-  const zero = h / 2;
-  return `<svg viewBox='0 0 ${w} ${h}' preserveAspectRatio='none'>
-    <line x1='${pad}' y1='${zero}' x2='${w - pad}' y2='${zero}' stroke='#334155' stroke-dasharray='4 4'/>
-    <line x1='${pad}' y1='${pad}' x2='${pad}' y2='${h - pad}' stroke='#24314d'/>
-    <path d='M${path}' fill='none' stroke='#60a5fa' stroke-width='2.5' />
-    ${points.map((p) => { const [cx, cy] = p.split(','); return `<circle cx='${cx}' cy='${cy}' r='3.5' fill='#60a5fa' stroke='#0b1020' stroke-width='2'/>`; }).join('')}
-  </svg>`;
+  const last = points[points.length - 1];
+  const first = points[0];
+  const netChange = last.v - first.v;
+  const netClass = netChange >= 0 ? 'up' : 'dn';
+
+  const gridLines = [];
+  const yTicks = 4;
+  for (let i = 0; i <= yTicks; i++) {
+    const value = min + (range * (yTicks - i) / yTicks);
+    const y = yFor(value);
+    gridLines.push(`<line x1='${padL}' y1='${y}' x2='${w - padR}' y2='${y}' stroke='${Math.abs(value) < 1e-9 ? '#334155' : '#1e293b'}' stroke-width='1' ${Math.abs(value) < 1e-9 ? "stroke-dasharray='4 4'" : ''}/>`);
+    gridLines.push(`<text x='${padL - 8}' y='${y + 3}' fill='#64748b' font-size='10' text-anchor='end'>${value.toFixed(3)}</text>`);
+  }
+  const xLabels = [0, Math.floor((points.length - 1) / 2), points.length - 1].filter((v, i, a) => a.indexOf(v) === i)
+    .map((idx, i) => `<text x='${points[idx].x}' y='${h - 8}' fill='#64748b' font-size='10' text-anchor='${i===0?'start':(i===2?'end':'middle')}'>${new Date(points[idx].t).toLocaleDateString('id-ID', { month: 'short', day: 'numeric' })}</text>`).join('');
+
+  const areaPath = `M${points.map(p => `${p.x},${p.y}`).join(' L ')} L ${last.x},${h-padB} L ${first.x},${h-padB} Z`;
+  const linePath = `M${points.map(p => `${p.x},${p.y}`).join(' L ')}`;
+  const pointNodes = points.map((p, idx) => {
+    const isLast = idx === points.length - 1;
+    const fill = isLast ? '#22c55e' : '#60a5fa';
+    const r = isLast ? 4.8 : 3.4;
+    const date = new Date(p.t).toLocaleString('id-ID', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return `<g class='eq-pt'><circle cx='${p.x}' cy='${p.y}' r='${r}' fill='${fill}' stroke='#0b1020' stroke-width='2'/><title>${date}\nCumulative: ${p.v.toFixed(4)} SOL\nTrade: ${p.trade >= 0 ? '+' : ''}${p.trade.toFixed(4)} SOL</title></g>`;
+  }).join('');
+  const peakPoint = points[peakIdx];
+  const troughPoint = points[troughIdx];
+
+  return `
+    <div class='chart-header' style='display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap'>
+      <div>
+        <div style='color:#cbd5e1;font-size:14px;font-weight:600'>Equity Curve (cumulative SOL)</div>
+        <div style='color:#94a5d4;font-size:12px'>Baseline dashed line = break-even (0 SOL)</div>
+      </div>
+      <div style='display:flex;gap:14px;font-size:12px;flex-wrap:wrap'>
+        <div>Start: <b>${first.v.toFixed(4)} SOL</b></div>
+        <div>Current: <b class='${netClass}'>${last.v.toFixed(4)} SOL</b></div>
+        <div>Net: <b class='${netClass}'>${netChange >= 0 ? '+' : ''}${netChange.toFixed(4)} SOL</b></div>
+      </div>
+    </div>
+    <svg viewBox='0 0 ${w} ${h}' preserveAspectRatio='none' style='width:100%;height:240px'>
+      <defs><linearGradient id='eqFill' x1='0' x2='0' y1='0' y2='1'><stop offset='0%' stop-color='#60a5fa' stop-opacity='0.26'/><stop offset='100%' stop-color='#60a5fa' stop-opacity='0.03'/></linearGradient></defs>
+      ${gridLines.join('')}
+      <line x1='${padL}' y1='${padT}' x2='${padL}' y2='${h - padB}' stroke='#24314d'/>
+      <line x1='${padL}' y1='${h - padB}' x2='${w - padR}' y2='${h - padB}' stroke='#24314d'/>
+      <path d='${areaPath}' fill='url(#eqFill)'/>
+      <path d='${linePath}' fill='none' stroke='#60a5fa' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/>
+      <line x1='${peakPoint.x}' y1='${peakPoint.y}' x2='${troughPoint.x}' y2='${troughPoint.y}' stroke='#ef4444' stroke-dasharray='3 3' opacity='0.7'/>
+      <text x='${troughPoint.x + 8}' y='${troughPoint.y - 6}' fill='#fca5a5' font-size='10'>Max DD ${(worstDd).toFixed(4)} SOL</text>
+      <text x='${peakPoint.x + 8}' y='${peakPoint.y - 6}' fill='#93c5fd' font-size='10'>Peak</text>
+      ${pointNodes}
+      ${xLabels}
+    </svg>
+    <div style='display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;color:#94a5d4;font-size:12px'>
+      <div><span style='display:inline-block;width:10px;height:10px;border-radius:50%;background:#22c55e;margin-right:6px'></span>Current point</div>
+      <div><span style='display:inline-block;width:10px;height:2px;background:#60a5fa;margin-right:6px;vertical-align:middle'></span>Equity line</div>
+      <div><span style='display:inline-block;width:10px;height:2px;background:#ef4444;margin-right:6px;vertical-align:middle'></span>Max drawdown span</div>
+    </div>
+  `;
 }
 
 function buildHistogramSvg(history) {
@@ -558,23 +614,52 @@ function buildHistogramSvg(history) {
     const v = Number(h.pnl_percent || 0);
     for (const b of buckets) { if (v >= b.min && v < b.max) { b.n += 1; break; } }
   });
-  const w = 600, h = 160, pad = 24;
+  const total = history.length;
+  const w = 600, h = 200, padL = 36, padR = 14, padT = 14, padB = 28;
   const maxN = Math.max(...buckets.map((b) => b.n), 1);
-  const colW = (w - pad * 2) / buckets.length;
-  return `<svg viewBox='0 0 ${w} ${h}' preserveAspectRatio='none'>
-    ${buckets.map((b, i) => {
-      const x = pad + i * colW + 4;
-      const bw = colW - 8;
-      const bh = ((h - pad * 2) * b.n) / maxN;
-      const y = h - pad - bh;
-      return `<g>
-        <rect x='${x}' y='${y}' width='${bw}' height='${bh}' fill='${b.color}' rx='4'/>
-        <text x='${x + bw / 2}' y='${h - 6}' fill='#94a5d4' font-size='10' text-anchor='middle'>${b.label}</text>
-        <text x='${x + bw / 2}' y='${y - 4}' fill='#dbe7ff' font-size='10' text-anchor='middle'>${b.n}</text>
-      </g>`;
-    }).join('')}
-    <line x1='${pad}' y1='${h - pad}' x2='${w - pad}' y2='${h - pad}' stroke='#24314d'/>
-  </svg>`;
+  const colW = (w - padL - padR) / buckets.length;
+  const yTicks = 4;
+  const yLines = [];
+  for (let i = 0; i <= yTicks; i++) {
+    const value = Math.round((maxN * i) / yTicks);
+    const y = h - padB - ((h - padT - padB) * i) / yTicks;
+    yLines.push(`<line x1='${padL}' y1='${y}' x2='${w - padR}' y2='${y}' stroke='#1e293b'/>`);
+    yLines.push(`<text x='${padL - 6}' y='${y + 3}' fill='#64748b' font-size='10' text-anchor='end'>${value}</text>`);
+  }
+  const winners = total ? buckets.slice(3).reduce((a, b) => a + b.n, 0) : 0;
+  const losers = total ? buckets.slice(0, 3).reduce((a, b) => a + b.n, 0) : 0;
+  const maxIdx = buckets.reduce((mi, b, i) => b.n > buckets[mi].n ? i : mi, 0);
+  return `
+    <div class='chart-header' style='display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap'>
+      <div>
+        <div style='color:#cbd5e1;font-size:14px;font-weight:600'>PnL Distribution (per trade)</div>
+        <div style='color:#94a5d4;font-size:12px'>Buckets by % return · totals reported above each bar</div>
+      </div>
+      <div style='display:flex;gap:14px;font-size:12px;flex-wrap:wrap'>
+        <div>Trades: <b>${total}</b></div>
+        <div>Winners: <b class='up'>${winners}</b></div>
+        <div>Losers: <b class='dn'>${losers}</b></div>
+      </div>
+    </div>
+    <svg viewBox='0 0 ${w} ${h}' preserveAspectRatio='none' style='width:100%;height:200px'>
+      ${yLines.join('')}
+      <line x1='${padL}' y1='${padT}' x2='${padL}' y2='${h - padB}' stroke='#24314d'/>
+      <line x1='${padL}' y1='${h - padB}' x2='${w - padR}' y2='${h - padB}' stroke='#24314d'/>
+      ${buckets.map((b, i) => {
+        const x = padL + i * colW + 6;
+        const bw = colW - 12;
+        const bh = ((h - padT - padB) * b.n) / maxN;
+        const y = h - padB - bh;
+        const stroke = i === maxIdx ? `<rect x='${x - 1.5}' y='${y - 1.5}' width='${bw + 3}' height='${bh + 3}' fill='none' stroke='#facc15' rx='5'/>` : '';
+        return `<g><title>${b.label}\n${b.n} trades\n${total ? ((b.n / total) * 100).toFixed(1) + '%' : '0%'}</title>
+          ${stroke}
+          <rect x='${x}' y='${y}' width='${bw}' height='${bh}' fill='${b.color}' rx='4'/>
+          <text x='${x + bw / 2}' y='${h - 8}' fill='#94a5d4' font-size='10' text-anchor='middle'>${b.label}</text>
+          <text x='${x + bw / 2}' y='${y - 4}' fill='#dbe7ff' font-size='10' text-anchor='middle' font-weight='600'>${b.n}</text>
+        </g>`;
+      }).join('')}
+    </svg>
+  `;
 }
 
 function computeAdvancedStats(history, summary) {
@@ -1118,14 +1203,70 @@ function positionsPage() {
   `);
 }
 
-function pnlPage() {
-  const summary = analyticsPnlSummary();
-  const history = analyticsClosedSeries();
+function filterHistoryByRange(history, range = 'all') {
+  if (!Array.isArray(history) || !history.length) return [];
+  if (!range || range === 'all') return history;
+  const days = Number(String(range).replace(/d$/i, ''));
+  if (!Number.isFinite(days) || days <= 0) return history;
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  return history.filter((h) => Number(h.closed_at_ms || 0) >= cutoff);
+}
+
+function summarizeFromHistory(history) {
+  const total = history.length;
+  const wins = history.filter((h) => Number(h.pnl_percent) >= 0).length;
+  const losses = total - wins;
+  const totalPnlPercent = history.reduce((a, h) => a + (Number(h.pnl_percent) || 0), 0);
+  const totalPnlSol = history.reduce((a, h) => a + (Number(h.pnl_sol) || 0), 0);
+  const vals = history.map((h) => Number(h.pnl_percent) || 0);
+  const avgPnlPercent = total ? totalPnlPercent / total : 0;
+  const maxPnlPercent = vals.length ? Math.max(...vals) : 0;
+  const minPnlPercent = vals.length ? Math.min(...vals) : 0;
+  const grossProfitSol = history.reduce((a, h) => a + Math.max(0, Number(h.pnl_sol) || 0), 0);
+  const grossLossSol = history.reduce((a, h) => a + Math.min(0, Number(h.pnl_sol) || 0), 0);
+  const winVals = history.filter((h) => Number(h.pnl_percent) >= 0).map((h) => Number(h.pnl_percent) || 0);
+  const lossVals = history.filter((h) => Number(h.pnl_percent) < 0).map((h) => Number(h.pnl_percent) || 0);
+  const avgWinPct = winVals.length ? winVals.reduce((a, b) => a + b, 0) / winVals.length : 0;
+  const avgLossPct = lossVals.length ? lossVals.reduce((a, b) => a + b, 0) / lossVals.length : 0;
+  const hold = history.map((h) => Number(h.closed_at_ms||0)-Number(h.opened_at_ms||0)).filter((v)=>v>0);
+  const avgHoldMs = hold.length ? hold.reduce((a,b)=>a+b,0)/hold.length : 0;
+  return { total,wins,losses,totalPnlPercent,totalPnlSol,avgPnlPercent,maxPnlPercent,minPnlPercent,grossProfitSol,grossLossSol,avgWinPct,avgLossPct,avgHoldMs,
+    total_pnl_percent: totalPnlPercent,total_pnl_sol: totalPnlSol,avg_pnl_percent: avgPnlPercent,best_pnl_percent:maxPnlPercent,worst_pnl_percent:minPnlPercent,gross_profit_sol:grossProfitSol,gross_loss_sol:grossLossSol,avg_win_pct:avgWinPct,avg_loss_pct:avgLossPct,avg_hold_ms:avgHoldMs };
+}
+
+function pnlPage(range = 'all') {
+  const rawSummary = analyticsPnlSummary();
+  const allHistory = analyticsClosedSeries();
+  const history = filterHistoryByRange(allHistory, range);
   const strategy = getEnabledStrategy();
-  const advanced = analyticsAdvancedStats(history, summary);
+  const rawAdvanced = analyticsAdvancedStats(history, rawSummary);
+
+  const summary = range === 'all' ? {
+    ...rawSummary,
+    total_pnl_sol: rawSummary.totalPnlSol,
+    avg_pnl_percent: rawSummary.avgPnlPercent,
+    best_pnl_percent: rawSummary.maxPnlPercent,
+    worst_pnl_percent: rawSummary.minPnlPercent,
+    total_pnl_percent: rawSummary.totalPnlPercent,
+  } : summarizeFromHistory(history);
+
+  const advanced = rawAdvanced ? {
+    ...rawAdvanced,
+    expectancyPct: rawAdvanced.expectancyPct ?? rawAdvanced.expectancy,
+    maxDrawdownPct: rawAdvanced.maxDrawdownPct ?? rawAdvanced.maxDrawdown,
+    avgHoldMs: rawAdvanced.avgHoldMs ?? summary.avg_hold_ms ?? 0,
+  } : null;
+
   const tips = generateRecommendations(summary, advanced, strategy);
 
-  const winRate = summary.total ? (summary.wins / summary.total) * 100 : 0;
+  const winRate = summary.total ? (summary.wins / summary.total) * 100 : 0; // safe for filtered range too
+  const rangeLabel = range === '7d' ? '7D' : (range === '30d' ? '30D' : 'All time');
+  const lastUpdated = history.length ? new Date(Math.max(...history.map((h) => Number(h.closed_at_ms || 0)))).toLocaleString('id-ID') : '-';
+  const recoGroups = {
+    risk: tips.filter((t) => /drawdown|loss|risk|bleed|negative/i.test(t.text)),
+    performance: tips.filter((t) => /profit factor|expectancy|win rate|pnl/i.test(t.text)),
+    tuning: tips.filter((t) => !/drawdown|loss|risk|bleed|negative|profit factor|expectancy|win rate|pnl/i.test(t.text)),
+  }; if (!recoGroups.tuning.length) recoGroups.tuning = tips;
 
   const tagClass = (k) => k === 'good' ? 'tag-good' : (k === 'bad' ? 'tag-bad' : (k === 'warn' ? 'tag-warn' : 'tag-info'));
   const tagText = (k) => k === 'good' ? 'GOOD' : (k === 'bad' ? 'WATCH' : (k === 'warn' ? 'WARN' : 'INFO'));
@@ -1141,28 +1282,55 @@ function pnlPage() {
       <div class='tile'><div class='k'>Best Trade</div><div class='v up'>${fmtPct(summary.best_pnl_percent)}</div></div>
       <div class='tile'><div class='k'>Worst Trade</div><div class='v dn'>${fmtPct(summary.worst_pnl_percent)}</div></div>
       <div class='tile'><div class='k'>Profit Factor</div><div class='v'>${advanced ? (advanced.profitFactor === Infinity ? '∞' : fmtNum(advanced.profitFactor, 2)) : '-'}</div></div>
+      <div class='tile'><div class='k'>Sharpe</div><div class='v ${advanced && Number(advanced.sharpeRatio) >= 0 ? 'up' : 'dn'}'>${advanced ? fmtNum(advanced.sharpeRatio, 2) : '-'}</div></div>
       <div class='tile'><div class='k'>Expectancy</div><div class='v ${advanced && advanced.expectancyPct >= 0 ? 'up' : 'dn'}'>${advanced ? fmtPct(advanced.expectancyPct) : '-'}</div></div>
       <div class='tile'><div class='k'>Max Drawdown</div><div class='v dn'>${advanced ? fmtNum(advanced.maxDrawdownPct, 1) + '%' : '-'}</div></div>
       <div class='tile'><div class='k'>Avg Hold Time</div><div class='v'>${advanced ? fmtAge(advanced.avgHoldMs) : '-'}</div></div>
     </div>
 
+    <div class='range-controls' style='display:flex;gap:8px;margin:16px 0 12px'>
+      <button class='fbtn ${range==='all'?'active':''}' data-range='all'>All</button>
+      <button class='fbtn ${range==='7d'?'active':''}' data-range='7d'>7D</button>
+      <button class='fbtn ${range==='30d'?'active':''}' data-range='30d'>30D</button>
+    </div>
+
     <div class='charts-grid'>
       <div class='chart'>
-        <div class='chart-title'>Equity Curve (cumulative SOL)</div>
-        ${buildEquityCurveSvg(history)}
+        ${buildEquityCurveSvg(history, summary)}
       </div>
       <div class='chart'>
-        <div class='chart-title'>PnL Distribution (per trade)</div>
         ${buildHistogramSvg(history)}
       </div>
     </div>
 
     <div class='reco'>
-      <h3>Insights and Recommendations</h3>
-      <ul>
-        ${tips.map((t) => `<li><span class='tag ${tagClass(t.kind)}'>${tagText(t.kind)}</span>${esc(t.text)}</li>`).join('')}
-      </ul>
+      <div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:10px'>
+        <h3>Insights and Recommendations</h3>
+        <div style='font-size:12px;color:#94a5d4'>Last updated: ${esc(lastUpdated)}</div>
+      </div>
+      <div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px'>
+        ${recoGroups.risk.length ? `<div class='reco-group'><h4 style='margin:0 0 6px;color:#ef4444'>Risk</h4><ul style='margin:0 0 0 16px'>${recoGroups.risk.map((t)=>`<li><span class='tag ${tagClass(t.kind)}'>${tagText(t.kind)}</span>${esc(t.text)}</li>`).join('')}</ul></div>` : ''}
+        ${recoGroups.performance.length ? `<div class='reco-group'><h4 style='margin:0 0 6px;color:#22c55e'>Performance</h4><ul style='margin:0 0 0 16px'>${recoGroups.performance.map((t)=>`<li><span class='tag ${tagClass(t.kind)}'>${tagText(t.kind)}</span>${esc(t.text)}</li>`).join('')}</ul></div>` : ''}
+        ${recoGroups.tuning.length ? `<div class='reco-group'><h4 style='margin:0 0 6px;color:#f59e0b'>Tuning</h4><ul style='margin:0 0 0 16px'>${recoGroups.tuning.map((t)=>`<li><span class='tag ${tagClass(t.kind)}'>${tagText(t.kind)}</span>${esc(t.text)}</li>`).join('')}</ul></div>` : ''}
+      </div>
     </div>
+    <style>
+      .range-controls .fbtn.active { background:#3b82f6;border-color:#3b82f6; }
+      .reco-group { background:rgba(15,23,42,0.6);border:1px solid #1e293b;border-radius:12px;padding:12px; }
+      .reco-group h4 { font-size:13px;text-transform:uppercase;letter-spacing:.4px; }
+      .reco-group ul { margin:0 0 0 16px; }
+      .reco-group li { margin-bottom:4px; }
+    </style>
+    <script>
+      document.querySelectorAll('.range-controls .fbtn').forEach((b) => {
+        b.addEventListener('click', () => {
+          const r = b.getAttribute('data-range');
+          const url = new URL(window.location.href);
+          if (r === 'all') url.searchParams.delete('range'); else url.searchParams.set('range', r);
+          window.location.href = url.toString();
+        });
+      });
+    </script>
   `);
 }
 
@@ -1225,23 +1393,47 @@ function candidatesPage() {
     const vol = metrics.trendingVolumeUsd ?? metrics.volumeUsd;
     const swaps = metrics.trendingSwaps ?? metrics.swaps;
 
-    return `<div class='pos ${r.status === 'accepted' ? 'pos-open' : 'pos-closed'}' data-status='${esc(r.status)}'
+    const createdAgo = fmtAgeSince(r.created_at_ms);
+    const updatedAgo = fmtAgeSince(r.updated_at_ms);
+    const tokenName = token.name || sym;
+    const sourceCount = cj.signal?.sources?.length || cj.signal?.source_count || 0;
+    const top20 = metrics.top20HolderPercent ?? metrics.top20_holder_percent;
+    const savedWallets = metrics.savedWalletHolders ?? metrics.saved_wallet_holders;
+    const rug = metrics.trendingRugRatio ?? metrics.rug_ratio;
+    const bundler = metrics.trendingBundlerRate ?? metrics.bundler_rate;
+    const ath = metrics.athDistancePct ?? metrics.ath_distance_pct;
+    const failPreview = fails.length ? fails.slice(0, 3).map((x) => `<li>${esc(x)}</li>`).join('') : '<li>No filter failures recorded</li>';
+
+    return `<div class='pos ${r.status === 'accepted' ? 'pos-open' : 'pos-closed'} cand-card' data-status='${esc(r.status)}'
       data-sort-created='${esc(r.created_at_ms || 0)}'
       data-sort-mcap='${esc(mcap == null ? '' : Number(mcap))}'
       data-sort-vol='${esc(vol == null ? '' : Number(vol))}'
       data-sort-swaps='${esc(swaps == null ? '' : Number(swaps))}'
       data-sort-symbol='${esc(sym)}'>
       <div class='pos-top'>
-        <div class='sym'>${esc(sym)} <span class='k'>#${esc(r.id)}</span></div>
+        <div>
+          <div class='sym'>${esc(sym)} <span class='k'>#${esc(r.id)}</span></div>
+          <div class='k' style='margin-top:3px'>${esc(tokenName)}</div>
+        </div>
         <span class='badge ${r.status === 'accepted' ? 'b-open' : 'b-closed'}'>${esc((r.status || 'new').toUpperCase())}</span>
       </div>
-      <div class='meta'>
+      <div class='meta cand-meta'>
         <div>Mint: <b><code>${esc(String(r.mint || '').slice(0, 8))}...${esc(String(r.mint || '').slice(-4))}</code></b></div>
-        <div>Created: <b>${esc(fmtAgeSince(r.created_at_ms))} ago</b></div>
+        <div>Created: <b>${esc(createdAgo)} ago</b></div>
+        <div>Updated: <b>${esc(updatedAgo)} ago</b></div>
+        <div>Sources: <b>${fmtNum(sourceCount, 0)}</b></div>
         <div>MCAP: <b>$${fmtNum(mcap, 0)}</b></div>
         <div>Volume: <b>$${fmtNum(vol, 0)}</b></div>
         <div>Swaps: <b>${fmtNum(swaps, 0)}</b></div>
-        <div>Failures: <b>${fails.length}</b>${fails.length ? ' · ' + esc(fails.slice(0,2).join(' | ')) : ''}</div>
+        <div>Top20: <b>${top20 == null ? '-' : fmtNum(top20, 1) + '%'}</b></div>
+        <div>Saved Wallets: <b>${savedWallets == null ? '-' : fmtNum(savedWallets, 0)}</b></div>
+        <div>ATH Dist: <b>${ath == null ? '-' : fmtNum(ath, 1) + '%'}</b></div>
+        <div>Rug Ratio: <b>${rug == null ? '-' : fmtNum(Number(rug) * 100, 1) + '%'}</b></div>
+        <div>Bundler: <b>${bundler == null ? '-' : fmtNum(Number(bundler) * 100, 1) + '%'}</b></div>
+      </div>
+      <div class='cand-fails'>
+        <div class='k' style='margin-bottom:6px'>Filter Notes · ${fails.length} item</div>
+        <ul>${failPreview}</ul>
       </div>
     </div>`;
   }).join('');
@@ -1255,7 +1447,7 @@ function candidatesPage() {
     </div>
 
     <div class='toolbar' style='display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px'>
-      <div class='k'>Latest 500 candidates · 20 per page</div>
+      <div class='k'>Latest 500 candidates · 10 per page · 2 cards per row</div>
       <div style='display:flex;flex-wrap:wrap;align-items:center;gap:10px'>
         <div class='filters'>
           <button class='fbtn active' data-cf='all'>All</button>
@@ -1281,6 +1473,17 @@ function candidatesPage() {
       <div class='k' id='c-pageinfo'>Page 1/1</div>
       <button id='c-next' class='fbtn'>Next →</button>
     </div>
+    <style>
+      #c-list { grid-template-columns: repeat(2, minmax(280px, 1fr)); }
+      @media (max-width: 720px) { #c-list { grid-template-columns: 1fr; } }
+      .cand-card { padding: 12px; }
+      .cand-meta { grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+      .cand-meta div { font-size: 11px; }
+      .cand-meta div b { font-size: 12px; }
+      .cand-fails { margin-top: 10px; }
+      .cand-fails ul { margin: 0 0 0 16px; padding: 0; }
+      .cand-fails li { font-size: 10px; color: #94a5d4; margin-bottom: 2px; }
+    </style>
 
     <script>
       const cAll = Array.from(document.querySelectorAll('#c-list .pos'));
@@ -1290,7 +1493,7 @@ function candidatesPage() {
       const cPrev = document.getElementById('c-prev');
       const cNext = document.getElementById('c-next');
       const cInfo = document.getElementById('c-pageinfo');
-      const C_PAGE_SIZE = 20;
+      const C_PAGE_SIZE = 10;
       let cPage = 1;
       let cFilter = 'all';
       let cSortKey = 'created_desc';
@@ -1342,17 +1545,130 @@ function candidatesPage() {
   `);
 }
 
+function fmtBool(v) { return v ? 'on' : 'off'; }
+function fmtPctRaw(v, d = 0) { return v == null ? '-' : `${Number(v).toFixed(d)}%`; }
+function fmtRatioPct(v, d = 1) { return v == null ? '-' : `${(Number(v) * 100).toFixed(d)}%`; }
+function fmtSolRaw(v, d = 4) { return v == null ? '-' : `${Number(v).toFixed(d)} SOL`; }
+
+function strategySectionRows(c = {}) {
+  const sections = [];
+
+  sections.push({
+    title: 'Entry Logic',
+    rows: [
+      ['Entry Mode', c.entry_mode === 'wait_for_dip' ? 'Wait for dip before entry' : 'Immediate entry when signal qualifies'],
+      ['Min Source Count', `${c.min_source_count ?? '-'} source(s)`],
+      ['Fee Claim Required', fmtBool(c.require_fee_claim)],
+      ['Token Age Limit', c.token_age_max_ms ? `${fmtAge(Number(c.token_age_max_ms))} max` : 'No age limit'],
+      ['LLM', c.use_llm ? `Enabled (min ${fmtNum(c.llm_min_confidence, 0)}% confidence)` : 'Disabled (rule-based)'],
+    ],
+  });
+
+  sections.push({
+    title: 'Position Sizing',
+    rows: [
+      ['Position Size', fmtSolRaw(c.position_size_sol)],
+      ['Max Open Positions', `${fmtNum(c.max_open_positions, 0)}`],
+    ],
+  });
+
+  sections.push({
+    title: 'Risk Management',
+    rows: [
+      ['Take Profit', fmtPctRaw(c.tp_percent)],
+      ['Stop Loss', fmtPctRaw(c.sl_percent)],
+      ['Trailing', c.trailing_enabled ? `${fmtNum(c.trailing_percent, 0)}%` : 'off'],
+      ['Partial TP', c.partial_tp ? `${fmtNum(c.partial_tp_sell_percent, 0)}% sell at +${fmtNum(c.partial_tp_at_percent, 0)}%` : 'off'],
+      ['Max Hold', c.max_hold_ms > 0 ? fmtAge(Number(c.max_hold_ms)) : 'no limit'],
+    ],
+  });
+
+  sections.push({
+    title: 'Filters · Market Cap & Holders',
+    rows: [
+      ['Min MCAP', `$${fmtNum(c.min_mcap_usd, 0)}`],
+      ['Max MCAP', c.max_mcap_usd > 0 ? `$${fmtNum(c.max_mcap_usd, 0)}` : 'off'],
+      ['Min Holders', c.min_holders > 0 ? `${fmtNum(c.min_holders, 0)}` : 'off'],
+      ['Max Top20 Holder %', c.max_top20_holder_percent < 100 ? `${fmtNum(c.max_top20_holder_percent, 0)}%` : 'off'],
+      ['Min Saved Wallet Holders', c.min_saved_wallet_holders > 0 ? `${fmtNum(c.min_saved_wallet_holders, 0)}` : 'off'],
+      ['Max ATH Distance', c.max_ath_distance_pct < 0 ? `${fmtNum(c.max_ath_distance_pct, 0)}%` : 'off'],
+    ],
+  });
+
+  sections.push({
+    title: 'Filters · Fees & Volume',
+    rows: [
+      ['Min Creator Fee Claim', fmtSolRaw(c.min_fee_claim_sol)],
+      ['Min GMGN Trading Fee', fmtSolRaw(c.min_gmgn_total_fee_sol)],
+      ['Min Graduated Volume', `$${fmtNum(c.min_graduated_volume_usd, 0)}`],
+    ],
+  });
+
+  sections.push({
+    title: 'Filters · Trending',
+    rows: [
+      ['Min Trend Volume', `$${fmtNum(c.trending_min_volume_usd, 0)}`],
+      ['Min Trend Swaps', `${fmtNum(c.trending_min_swaps, 0)}`],
+      ['Max Rug Ratio', fmtRatioPct(c.trending_max_rug_ratio)],
+      ['Max Bundler Rate', fmtRatioPct(c.trending_max_bundler_rate)],
+    ],
+  });
+
+  sections.push({
+    title: 'Stochastic RSI (optional)',
+    rows: [
+      ['Enabled', fmtBool(c.use_stoch_rsi)],
+      ['Timeframe', String(c.stoch_rsi_resolution || '15m')],
+      ['Overbought (OB)', `${fmtNum(c.stoch_rsi_overbought ?? 80, 0)}`],
+      ['Oversold (OS)', `${fmtNum(c.stoch_rsi_oversold ?? 20, 0)}`],
+      ['Reject Overbought', fmtBool(c.stoch_rsi_reject_overbought !== false)],
+      ['Require Bullish Cross', fmtBool(c.stoch_rsi_require_bullish_cross)],
+      ['Require Oversold', fmtBool(c.stoch_rsi_require_oversold)],
+    ],
+  });
+
+  return sections;
+}
+
 function strategyPage() {
   const s = getEnabledStrategy();
-  const rows = strategySummaryRows(s?.config || {});
+  const c = s?.config || {};
+  const sections = strategySectionRows(c);
+
+  const summaryTiles = [
+    ['Strategy', `${esc(s?.id || '-')} · ${esc(s?.name || '-')}`],
+    ['Entry', esc(c.entry_mode || '-')],
+    ['Size', esc(fmtSolRaw(c.position_size_sol))],
+    ['TP / SL', `${fmtNum(c.tp_percent, 0)}% / ${fmtNum(c.sl_percent, 0)}%`],
+    ['Max Pos', `${fmtNum(c.max_open_positions, 0)}`],
+    ['LLM', c.use_llm ? `min ${fmtNum(c.llm_min_confidence, 0)}%` : 'off'],
+    ['Stoch RSI', c.use_stoch_rsi ? `on · ${esc(c.stoch_rsi_resolution || '15m')}` : 'off'],
+  ];
+
+  const tilesHtml = summaryTiles
+    .map(([k, v]) => `<div class='tile'><div class='k'>${esc(k)}</div><div class='v' style='font-size:15px'>${v}</div></div>`)
+    .join('');
+
+  const sectionsHtml = sections.map((sec) => `
+    <div class='strat-section'>
+      <h3 class='strat-section-title'>${esc(sec.title)}</h3>
+      <div class='strat-grid'>
+        ${sec.rows.map(([k, v]) => `<div class='strat-cell'><div class='k'>${esc(k)}</div><div class='v'>${esc(String(v))}</div></div>`).join('')}
+      </div>
+    </div>
+  `).join('');
+
   return renderShell('Strategy', `
-    <div class='summary'>
-      <div class='tile'><div class='k'>Strategy ID</div><div class='v'>${esc(s?.id || '-')}</div></div>
-      <div class='tile'><div class='k'>Name</div><div class='v'>${esc(s?.name || '-')}</div></div>
-    </div>
-    <div class='strat-list'>
-      ${rows.map(([k, v]) => `<div><div class='k'>${esc(k)}</div><div class='v' style='font-size:15px'>${esc(v)}</div></div>`).join('')}
-    </div>
+    <div class='summary'>${tilesHtml}</div>
+    <style>
+      .strat-section { margin-top: 18px; border: 1px solid var(--line); background: rgba(15,23,42,0.55); border-radius: 14px; padding: 14px 16px; }
+      .strat-section-title { margin: 0 0 10px; font-size: 14px; letter-spacing: .4px; color: #cbd5e1; text-transform: uppercase; }
+      .strat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+      .strat-cell { background: rgba(2,6,23,0.55); border: 1px solid #1f2a44; border-radius: 10px; padding: 10px 12px; }
+      .strat-cell .k { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+      .strat-cell .v { color: var(--text); font-size: 14px; font-weight: 600; word-break: break-word; }
+    </style>
+    ${sectionsHtml}
   `);
 }
 
@@ -1368,7 +1684,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, row, req);
     }
 
-    if (u.pathname === '/pnl') return sendHtml(res, 200, pnlPage(), req);
+    if (u.pathname === '/pnl') return sendHtml(res, 200, pnlPage(u.searchParams.get('range') || 'all'), req);
     if (u.pathname === '/strategy') return sendHtml(res, 200, strategyPage(), req);
     if (u.pathname === '/candidates') return sendHtml(res, 200, candidatesPage(), req);
     if (u.pathname === '/' || u.pathname === '/positions') return sendHtml(res, 200, positionsPage(), req);

@@ -86,6 +86,8 @@ export const strategyNumericLabels = {
   trending_max_rug_ratio: 'maximum trending rug ratio (0.3 = 30%)',
   trending_max_bundler_rate: 'maximum trending bundler rate (0.5 = 50%)',
   llm_min_confidence: 'LLM minimum confidence percent',
+  stoch_rsi_overbought: 'Stoch RSI overbought threshold',
+  stoch_rsi_oversold: 'Stoch RSI oversold threshold',
   position_size_sol: 'position size SOL',
   max_open_positions: 'maximum open positions',
   tp_percent: 'take profit percent',
@@ -214,6 +216,8 @@ export function strategyMenuText() {
     strat.partial_tp ? `Partial TP: ${strat.partial_tp_sell_percent}% at ${fmtPct(strat.partial_tp_at_percent)}` : null,
     strat.max_hold_ms > 0 ? `Max hold: ${Math.round(strat.max_hold_ms / 60000)}m` : null,
     strat.use_llm ? `LLM: yes (min ${strat.llm_min_confidence}%)` : 'LLM: no (rule-based)',
+    `Stoch RSI: ${strat.use_stoch_rsi ? 'on' : 'off'}${strat.use_stoch_rsi ? ` · tf ${escapeHtml(strat.stoch_rsi_resolution || '15m')} · OB ${strat.stoch_rsi_overbought ?? 80} · OS ${strat.stoch_rsi_oversold ?? 20}` : ''}`,
+    strat.use_stoch_rsi ? `Stoch Rules: bullish_cross ${strat.stoch_rsi_require_bullish_cross ? 'on' : 'off'} · require_oversold ${strat.stoch_rsi_require_oversold ? 'on' : 'off'} · reject_overbought ${strat.stoch_rsi_reject_overbought === false ? 'off' : 'on'}` : null,
     '',
     ...all.map(s => `${s.enabled ? '▶' : '○'} ${s.name}`),
   ].filter(Boolean).join('\n');
@@ -281,6 +285,22 @@ export function strategyKeyboard() {
     ],
     [
       { text: `Partial At ${strat.partial_tp_at_percent}%`, callback_data: 'stratinput:partial_tp_at_percent' },
+    ],
+    [{ text: '── Stoch RSI (optional) ──', callback_data: 'noop' }],
+    [
+      { text: `Stoch RSI ${strat.use_stoch_rsi ? 'on' : 'off'}`, callback_data: 'stratcfg:use_stoch_rsi' },
+      { text: `TF ${escapeHtml(strat.stoch_rsi_resolution || '15m')}`, callback_data: 'stratrotate:stoch_rsi_resolution' },
+    ],
+    [
+      { text: `OB ${strat.stoch_rsi_overbought ?? 80}`, callback_data: 'stratinput:stoch_rsi_overbought' },
+      { text: `OS ${strat.stoch_rsi_oversold ?? 20}`, callback_data: 'stratinput:stoch_rsi_oversold' },
+    ],
+    [
+      { text: `Reject OB ${strat.stoch_rsi_reject_overbought === false ? 'off' : 'on'}`, callback_data: 'stratcfg:stoch_rsi_reject_overbought' },
+      { text: `Req Cross ${strat.stoch_rsi_require_bullish_cross ? 'on' : 'off'}`, callback_data: 'stratcfg:stoch_rsi_require_bullish_cross' },
+    ],
+    [
+      { text: `Req OS ${strat.stoch_rsi_require_oversold ? 'on' : 'off'}`, callback_data: 'stratcfg:stoch_rsi_require_oversold' },
     ],
   ];
   return {
