@@ -1,4 +1,5 @@
 import http from 'http';
+import zlib from 'zlib';
 import Database from 'better-sqlite3';
 
 const HOST = process.env.CHARON_DASHBOARD_HOST || '127.0.0.1';
@@ -55,6 +56,66 @@ function getPositions() {
   const open = db.prepare("SELECT id,symbol,mint,status,opened_at_ms,size_sol,entry_price,entry_mcap,high_water_mcap,tp_percent,sl_percent,trailing_enabled,trailing_percent,entry_signature,exit_signature,execution_mode,strategy_id FROM dry_run_positions WHERE status='open' ORDER BY opened_at_ms DESC").all();
   const closed = db.prepare("SELECT id,symbol,mint,status,opened_at_ms,closed_at_ms,size_sol,entry_price,entry_mcap,high_water_mcap,exit_price,exit_mcap,exit_reason,tp_percent,sl_percent,trailing_enabled,trailing_percent,pnl_percent,pnl_sol,entry_signature,exit_signature,execution_mode,strategy_id FROM dry_run_positions WHERE status='closed' ORDER BY opened_at_ms DESC").all();
   return { open, closed };
+}
+
+function getPositionCardsLite() {
+  return db.prepare(`
+    SELECT id,symbol,mint,status,opened_at_ms,size_sol,entry_mcap,exit_mcap,pnl_percent
+    FROM dry_run_positions
+    ORDER BY opened_at_ms DESC
+  `).all();
+}
+
+function getPositionDetailById(id) {
+  return db.prepare(`
+    SELECT id,symbol,mint,status,opened_at_ms,closed_at_ms,size_sol,entry_price,entry_mcap,high_water_mcap,
+           exit_price,exit_mcap,exit_reason,tp_percent,sl_percent,trailing_enabled,trailing_percent,
+           pnl_percent,pnl_sol,entry_signature,exit_signature,execution_mode,strategy_id
+    FROM dry_run_positions
+    WHERE id = ?
+    LIMIT 1
+  `).get(id);
+}
+
+function sendJson(res, status, payload, req) {
+  const json = JSON.stringify(payload);
+  const ae = (req.headers['accept-encoding'] || '').toString();
+  if (ae.includes('gzip')) {
+    const gz = zlib.gzipSync(json);
+    res.writeHead(status, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Content-Encoding': 'gzip',
+      'Cache-Control': 'no-store',
+      'Vary': 'Accept-Encoding',
+    });
+    res.end(gz);
+    return;
+  }
+  res.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store',
+  });
+  res.end(json);
+}
+
+function sendHtml(res, status, html, req) {
+  const ae = (req.headers['accept-encoding'] || '').toString();
+  if (ae.includes('gzip')) {
+    const gz = zlib.gzipSync(html);
+    res.writeHead(status, {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Content-Encoding': 'gzip',
+      'Cache-Control': 'no-store',
+      'Vary': 'Accept-Encoding',
+    });
+    res.end(gz);
+    return;
+  }
+  res.writeHead(status, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'no-store',
+  });
+  res.end(html);
 }
 
 function getPnlSummary() {
@@ -119,13 +180,44 @@ function renderShell(title, body) {
     h2 { font-size: 18px; margin: 22px 0 12px; }
     .sub { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
 
-    .nav { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
-    .pill {
-      color: #bcd0ff; text-decoration: none; font-weight: 600; font-size: 13px;
-      padding: 8px 12px; border-radius: 999px;
-      ${TILE_BG}
-      border: 1px solid var(--line);
+.nav {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 6px;
+      margin-bottom: 16px;
+      padding: 5px;
+      background: linear-gradient(180deg, #0d1527, #0a1222);
+      border: 1px solid #223252;
+      border-radius: 12px;
+      box-shadow: inset 0 1px 0 #33476955;
     }
+    .pill {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: #9bb1e6;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 13px;
+      letter-spacing: .2px;
+      padding: 9px 12px;
+      border-radius: 9px;
+      text-align: center;
+      border: 1px solid transparent;
+      background: transparent;
+      transition: color .15s ease, background .15s ease, border-color .15s ease;
+    }
+    .pill svg { width: 14px; height: 14px; opacity: .85; }
+    .pill:hover { color: #e6efff; background: #15213a66; }
+    .pill.active {
+      color: #ffffff;
+      border-color: #2f4f8c;
+      background: linear-gradient(180deg, #1b3060, #14264c);
+      box-shadow: 0 0 0 1px #4f86ff22, 0 4px 12px #0b122244;
+    }
+    .pill.active svg { opacity: 1; }
 
     .summary {
       display: grid;
@@ -190,39 +282,52 @@ function renderShell(title, body) {
 
     .list {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(255px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
       gap: 10px;
     }
 
     .pos {
-      ${PANEL_BG}
+      background: linear-gradient(180deg, #131d31, #10182a);
       border: 1px solid var(--line);
+      border-left-width: 3px;
       border-radius: 12px;
-      padding: 12px;
+      padding: 11px;
       cursor: pointer;
-      transition: transform .08s ease, border-color .12s ease;
+      transition: transform .08s ease, border-color .12s ease, box-shadow .12s ease;
     }
-    .pos:hover { transform: translateY(-1px); border-color: #3b82f6; }
-    .pos.active { border-color: #60a5fa; box-shadow: 0 0 0 1px #60a5fa33 inset; }
+    .pos-open {
+      border-color: #1f3b2c;
+      border-left-color: #22c55e;
+      box-shadow: 0 0 0 1px #14532d22 inset;
+    }
+    .pos-closed {
+      border-color: #3b1f24;
+      border-left-color: #ef4444;
+      box-shadow: 0 0 0 1px #4b182022 inset;
+    }
+    .pos:hover { transform: translateY(-1px); }
+    .pos-open:hover { border-color: #22c55e; box-shadow: 0 0 0 1px #22c55e44 inset; }
+    .pos-closed:hover { border-color: #ef4444; box-shadow: 0 0 0 1px #ef444444 inset; }
+    .pos.active { box-shadow: 0 0 0 1px #60a5fa inset, 0 6px 18px #0b122244; }
 
-    .pos-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-    .sym { font-size: 16px; font-weight: 700; letter-spacing: .1px; }
+    .pos-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; gap: 8px; }
+    .sym { font-size: 15px; font-weight: 700; letter-spacing: .1px; line-height: 1.2; }
     .badge {
-      font-size: 10px; letter-spacing: .5px; font-weight: 800;
-      padding: 4px 7px; border-radius: 999px;
+      font-size: 9px; letter-spacing: .6px; font-weight: 700;
+      padding: 3px 7px; border-radius: 999px; opacity: .92;
     }
-    .b-open { background: #10311f; color: #6ee7b7; }
-    .b-closed { background: #351417; color: #fca5a5; }
+    .b-open { background: #0f2b1d; color: #86efac; border: 1px solid #264c3a; }
+    .b-closed { background: #351417; color: #fda4af; border: 1px solid #4c2626; }
 
-    .pnl-big { font-size: 22px; font-weight: 800; margin-bottom: 8px; }
+    .pnl-big { font-size: 24px; font-weight: 800; line-height: 1; margin: 0 0 10px; letter-spacing: -.02em; }
     .meta {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 6px 10px;
-      font-size: 12px;
+      gap: 7px 10px;
+      font-size: 11px;
       color: var(--muted);
     }
-    .meta b { color: #dbe7ff; font-weight: 600; }
+    .meta b { color: #e6eeff; font-weight: 650; font-size: 12px; }
 
     .ext {
       display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap;
@@ -243,24 +348,43 @@ function renderShell(title, body) {
 
     .side {
       position: sticky; top: 16px;
-      ${PANEL_BG}
+      background: linear-gradient(180deg, #131d31ee, #10182aee);
       border: 1px solid var(--line);
-      border-radius: 12px;
+      border-radius: 14px;
       padding: 14px;
       min-height: 320px;
+      box-shadow: 0 8px 24px #05091655;
+      backdrop-filter: blur(3px);
     }
-    .side h3 { margin: 0 0 10px; }
-    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
-    .dk { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
-    .dv { font-size: 13px; font-weight: 600; word-break: break-word; }
+    .side h3 { margin: 0 0 10px; font-size: 17px; letter-spacing: .2px; }
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px 12px;
+      border-top: 1px solid #21304a;
+      padding-top: 10px;
+    }
+    .dk { color: #8fa4d9; font-size: 10px; text-transform: uppercase; letter-spacing: .6px; }
+    .dv { font-size: 13px; font-weight: 600; word-break: break-word; color:#e5edff; }
     code {
-      background: #0d1424;
-      border: 1px solid var(--line);
+      background: #0b1323;
+      border: 1px solid #223252;
       padding: 2px 6px;
       border-radius: 6px;
       color: #c7d6ff;
       font-size: 11px;
     }
+    .loading {
+      display:inline-block;
+      width: 180px;
+      height: 10px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #1a253a, #2a3c5c, #1a253a);
+      background-size: 200% 100%;
+      animation: shimmer 1.2s linear infinite;
+      margin-top:8px;
+    }
+    @keyframes shimmer { from{background-position:200% 0;} to{background-position:-200% 0;} }
 
     .empty {
       border: 1px dashed var(--line);
@@ -305,9 +429,9 @@ function renderShell(title, body) {
     <h1>Charon Dashboard</h1>
     <div class='sub'>Trading-style read-only view focused on PnL and position flow.</div>
     <div class='nav'>
-      <a class='pill' href='/positions'>Positions</a>
-      <a class='pill' href='/pnl'>PnL</a>
-      <a class='pill' href='/strategy'>Strategy</a>
+      <a class='pill ${title === 'Positions' ? 'active' : ''}' href='/positions'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><rect x='3' y='4' width='18' height='16' rx='2'/><line x1='3' y1='10' x2='21' y2='10'/></svg>Positions</a>
+      <a class='pill ${title === 'PnL' ? 'active' : ''}' href='/pnl'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><polyline points='3 17 9 11 13 15 21 7'/><line x1='21' y1='7' x2='21' y2='13'/></svg>PnL</a>
+      <a class='pill ${title === 'Strategy' ? 'active' : ''}' href='/strategy'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><circle cx='12' cy='12' r='3'/><path d='M19.4 15a1.7 1.7 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-.4-1.1 1.7 1.7 0 0 0-1-.6 1.7 1.7 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.1-.4 1.7 1.7 0 0 0 .6-1A1.7 1.7 0 0 0 4.47 6.4l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 .4 1.1 1.7 1.7 0 0 0 1 .6 1.7 1.7 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.26.3.47.65.6 1 .1.32.15.66.15 1s-.05.68-.15 1c-.13.35-.34.7-.6 1z'/></svg>Strategy</a>
     </div>
     ${body}
   </div>
@@ -480,8 +604,7 @@ function generateRecommendations(summary, advanced, strategy) {
 }
 
 function positionsPage() {
-  const { open, closed } = getPositions();
-  const all = [...open, ...closed];
+  const all = getPositionCardsLite();
 
   const cards = all.map((p, i) => {
     const isClosed = p.status === 'closed';
@@ -503,17 +626,15 @@ function positionsPage() {
         <div>Entry MCAP: <b>$${fmtNum(p.entry_mcap, 0)}</b></div>
       `;
 
-    return `<div class='pos' data-i='${i}' data-status='${esc(p.status)}'>
+    return `<div class='pos ${isClosed ? 'pos-closed' : 'pos-open'}' data-id='${esc(p.id)}' data-status='${esc(p.status)}'>
       <div class='pos-top'>
         <div class='sym'>${esc(p.symbol || 'Unknown')}</div>
         <span class='badge ${statusClass}'>${esc(String(p.status).toUpperCase())}</span>
       </div>
-      <div class='pnl-big ${pnlClass}'>${esc(pnlText)}</div>
+      ${isClosed ? `<div class='pnl-big ${pnlClass}'>${esc(pnlText)}</div>` : ''}
       <div class='meta'>${compactMeta}</div>
     </div>`;
   }).join('');
-
-  const payloadJson = JSON.stringify(all).replace(/</g, '\\u003c');
 
   return renderShell('Positions', `
 
@@ -536,17 +657,26 @@ function positionsPage() {
       </div>
     </div>
 
-    <script id='positions-data' type='application/json'>${payloadJson}</script>
     <script>
-      const data = JSON.parse(document.getElementById('positions-data').textContent || '[]');
       const panel = document.getElementById('detail-panel');
       const cards = Array.from(document.querySelectorAll('.pos'));
       const buttons = Array.from(document.querySelectorAll('.fbtn'));
       const TROJAN_BOT = ${JSON.stringify(TROJAN_BOT)};
+      const detailCache = new Map();
 
       function safe(v){ return (v === null || v === undefined) ? '-' : String(v); }
       function iso(ms){ try { return ms ? new Date(ms).toISOString() : '-' ; } catch { return '-'; } }
       function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+      function showLoading(){ panel.innerHTML = '<h3 style="margin:0 0 10px">Position Detail</h3><div class="k">Loading detail…</div>'; }
+
+      async function loadDetail(id){
+        if (detailCache.has(id)) return detailCache.get(id);
+        const res = await fetch('/api/position?id=' + encodeURIComponent(id), { cache: 'no-store' });
+        if (!res.ok) throw new Error('Failed to load detail');
+        const data = await res.json();
+        detailCache.set(id, data);
+        return data;
+      }
 
       function renderDetail(pos){
         const pnlClass = pos.pnl_percent == null ? '' : (Number(pos.pnl_percent) >= 0 ? 'up' : 'dn');
@@ -597,12 +727,17 @@ function positionsPage() {
       }
 
       cards.forEach((el) => {
-        el.addEventListener('click', (e) => {
-          if (e.target && e.target.tagName === 'A') return;
+        el.addEventListener('click', async () => {
           cards.forEach((x) => x.classList.remove('active'));
           el.classList.add('active');
-          const i = Number(el.dataset.i);
-          renderDetail(data[i] || {});
+          const id = el.dataset.id;
+          showLoading();
+          try {
+            const pos = await loadDetail(id);
+            renderDetail(pos || {});
+          } catch {
+            panel.innerHTML = '<h3 style="margin:0 0 10px">Position Detail</h3><div class="k">Failed to load detail.</div>';
+          }
         });
       });
 
@@ -618,7 +753,7 @@ function positionsPage() {
         });
       });
 
-      if (cards.length) cards[0].click();
+      requestAnimationFrame(() => { if (cards.length) cards[0].click(); });
     </script>
   `);
 }
@@ -702,22 +837,21 @@ function strategyPage() {
 
 const server = http.createServer((req, res) => {
   try {
-    if (req.url === '/pnl') {
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(pnlPage());
-      return;
+    const u = new URL(req.url, `http://${HOST}:${PORT}`);
+
+    if (u.pathname === '/api/position') {
+      const id = u.searchParams.get('id');
+      if (!id) return sendJson(res, 400, { error: 'missing id' }, req);
+      const row = getPositionDetailById(id);
+      if (!row) return sendJson(res, 404, { error: 'not found' }, req);
+      return sendJson(res, 200, row, req);
     }
-    if (req.url === '/strategy') {
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(strategyPage());
-      return;
-    }
-    if (req.url === '/' || req.url === '/positions') {
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(positionsPage());
-      return;
-    }
-    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+
+    if (u.pathname === '/pnl') return sendHtml(res, 200, pnlPage(), req);
+    if (u.pathname === '/strategy') return sendHtml(res, 200, strategyPage(), req);
+    if (u.pathname === '/' || u.pathname === '/positions') return sendHtml(res, 200, positionsPage(), req);
+
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end('Not Found');
   } catch (err) {
     res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
