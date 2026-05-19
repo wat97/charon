@@ -10,25 +10,59 @@ export function getPnlSummary() {
       SUM(pnl_sol) as totalPnlSol,
       AVG(pnl_percent) as avgPnlPercent,
       MAX(pnl_percent) as maxPnlPercent,
-      MIN(pnl_percent) as minPnlPercent
+      MIN(pnl_percent) as minPnlPercent,
+      SUM(CASE WHEN pnl_sol > 0 THEN pnl_sol ELSE 0 END) as grossProfitSol,
+      SUM(CASE WHEN pnl_sol < 0 THEN pnl_sol ELSE 0 END) as grossLossSol,
+      AVG(CASE WHEN pnl_percent >= 0 THEN pnl_percent END) as avgWinPct,
+      AVG(CASE WHEN pnl_percent < 0 THEN pnl_percent END) as avgLossPct,
+      AVG(CASE WHEN opened_at_ms IS NOT NULL AND closed_at_ms IS NOT NULL THEN closed_at_ms - opened_at_ms END) as avgHoldMs
     FROM dry_run_positions
     WHERE status = 'closed'
   `).get();
+  const total = Number(rows.total) || 0;
+  const wins = Number(rows.wins) || 0;
+  const losses = Number(rows.losses) || 0;
+  const totalPnlPercent = Number(rows.totalPnlPercent) || 0;
+  const totalPnlSol = Number(rows.totalPnlSol) || 0;
+  const avgPnlPercent = total ? totalPnlPercent / total : 0;
+  const maxPnlPercent = Number(rows.maxPnlPercent) || 0;
+  const minPnlPercent = Number(rows.minPnlPercent) || 0;
+  const grossProfitSol = Number(rows.grossProfitSol) || 0;
+  const grossLossSol = Number(rows.grossLossSol) || 0;
+  const avgWinPct = Number(rows.avgWinPct) || 0;
+  const avgLossPct = Number(rows.avgLossPct) || 0;
+  const avgHoldMs = Number(rows.avgHoldMs) || 0;
   return {
-    total: rows.total || 0,
-    wins: rows.wins || 0,
-    losses: rows.losses || 0,
-    totalPnlPercent: Number(rows.totalPnlPercent) || 0,
-    totalPnlSol: Number(rows.totalPnlSol) || 0,
-    avgPnlPercent: Number(rows.avgPnlPercent) || 0,
-    maxPnlPercent: Number(rows.maxPnlPercent) || 0,
-    minPnlPercent: Number(rows.minPnlPercent) || 0,
+    total,
+    wins,
+    losses,
+    totalPnlPercent,
+    totalPnlSol,
+    avgPnlPercent,
+    maxPnlPercent,
+    minPnlPercent,
+    grossProfitSol,
+    grossLossSol,
+    avgWinPct,
+    avgLossPct,
+    avgHoldMs,
+    // backward-compatible aliases for older dashboard template code
+    total_pnl_percent: totalPnlPercent,
+    total_pnl_sol: totalPnlSol,
+    avg_pnl_percent: avgPnlPercent,
+    best_pnl_percent: maxPnlPercent,
+    worst_pnl_percent: minPnlPercent,
+    gross_profit_sol: grossProfitSol,
+    gross_loss_sol: grossLossSol,
+    avg_win_pct: avgWinPct,
+    avg_loss_pct: avgLossPct,
+    avg_hold_ms: avgHoldMs,
   };
 }
 
 export function getClosedSeries() {
   return db.prepare(`
-    SELECT closed_at_ms, pnl_percent, pnl_sol
+    SELECT closed_at_ms, opened_at_ms, pnl_percent, pnl_sol
     FROM dry_run_positions
     WHERE status = 'closed'
     ORDER BY closed_at_ms ASC
@@ -60,6 +94,11 @@ export function computeAdvancedStats(history, summary) {
   const avgLossAbs = losses.length ? Math.abs(losses.reduce((a, h) => a + (Number(h.pnl_percent) || 0), 0) / losses.length) : 0;
   const expectancy = ((winRate / 100) * avgWin) - (((100 - winRate) / 100) * avgLossAbs);
 
+  const holdSamples = history
+    .map((h) => (Number(h.closed_at_ms) > 0 && Number(h.opened_at_ms) > 0 ? Number(h.closed_at_ms) - Number(h.opened_at_ms) : 0))
+    .filter((v) => Number.isFinite(v) && v > 0);
+  const avgHoldMs = holdSamples.length ? holdSamples.reduce((a, b) => a + b, 0) / holdSamples.length : (Number(summary.avgHoldMs) || Number(summary.avg_hold_ms) || 0);
+
   const sorted = history.map(h => Number(h.pnl_percent) || 0).sort((a, b) => a - b);
   const percentile = (p) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.floor(sorted.length * p)))] || 0;
 
@@ -67,9 +106,12 @@ export function computeAdvancedStats(history, summary) {
     winRate,
     profitFactor,
     maxDrawdown: maxDD,
+    maxDrawdownPct: maxDD,
     expectancy,
+    expectancyPct: expectancy,
     avgWin,
     avgLossAbs,
+    avgHoldMs,
     p50: percentile(0.50),
     p95: percentile(0.95),
     p99: percentile(0.99),

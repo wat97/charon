@@ -1119,10 +1119,27 @@ function positionsPage() {
 }
 
 function pnlPage() {
-  const summary = analyticsPnlSummary();
+  const rawSummary = analyticsPnlSummary();
   const history = analyticsClosedSeries();
   const strategy = getEnabledStrategy();
-  const advanced = analyticsAdvancedStats(history, summary);
+  const rawAdvanced = analyticsAdvancedStats(history, rawSummary);
+
+  // Backward-compatible shape expected by existing dashboard template/recommendation logic
+  const summary = {
+    ...rawSummary,
+    total_pnl_sol: rawSummary.totalPnlSol,
+    avg_pnl_percent: rawSummary.avgPnlPercent,
+    best_pnl_percent: rawSummary.maxPnlPercent,
+    worst_pnl_percent: rawSummary.minPnlPercent,
+    total_pnl_percent: rawSummary.totalPnlPercent,
+  };
+  const advanced = rawAdvanced ? {
+    ...rawAdvanced,
+    expectancyPct: rawAdvanced.expectancy,
+    maxDrawdownPct: rawAdvanced.maxDrawdown,
+    avgHoldMs: 0,
+  } : null;
+
   const tips = generateRecommendations(summary, advanced, strategy);
 
   const winRate = summary.total ? (summary.wins / summary.total) * 100 : 0;
@@ -1342,17 +1359,130 @@ function candidatesPage() {
   `);
 }
 
+function fmtBool(v) { return v ? 'on' : 'off'; }
+function fmtPctRaw(v, d = 0) { return v == null ? '-' : `${Number(v).toFixed(d)}%`; }
+function fmtRatioPct(v, d = 1) { return v == null ? '-' : `${(Number(v) * 100).toFixed(d)}%`; }
+function fmtSolRaw(v, d = 4) { return v == null ? '-' : `${Number(v).toFixed(d)} SOL`; }
+
+function strategySectionRows(c = {}) {
+  const sections = [];
+
+  sections.push({
+    title: 'Entry Logic',
+    rows: [
+      ['Entry Mode', c.entry_mode === 'wait_for_dip' ? 'Wait for dip before entry' : 'Immediate entry when signal qualifies'],
+      ['Min Source Count', `${c.min_source_count ?? '-'} source(s)`],
+      ['Fee Claim Required', fmtBool(c.require_fee_claim)],
+      ['Token Age Limit', c.token_age_max_ms ? `${fmtAge(Number(c.token_age_max_ms))} max` : 'No age limit'],
+      ['LLM', c.use_llm ? `Enabled (min ${fmtNum(c.llm_min_confidence, 0)}% confidence)` : 'Disabled (rule-based)'],
+    ],
+  });
+
+  sections.push({
+    title: 'Position Sizing',
+    rows: [
+      ['Position Size', fmtSolRaw(c.position_size_sol)],
+      ['Max Open Positions', `${fmtNum(c.max_open_positions, 0)}`],
+    ],
+  });
+
+  sections.push({
+    title: 'Risk Management',
+    rows: [
+      ['Take Profit', fmtPctRaw(c.tp_percent)],
+      ['Stop Loss', fmtPctRaw(c.sl_percent)],
+      ['Trailing', c.trailing_enabled ? `${fmtNum(c.trailing_percent, 0)}%` : 'off'],
+      ['Partial TP', c.partial_tp ? `${fmtNum(c.partial_tp_sell_percent, 0)}% sell at +${fmtNum(c.partial_tp_at_percent, 0)}%` : 'off'],
+      ['Max Hold', c.max_hold_ms > 0 ? fmtAge(Number(c.max_hold_ms)) : 'no limit'],
+    ],
+  });
+
+  sections.push({
+    title: 'Filters · Market Cap & Holders',
+    rows: [
+      ['Min MCAP', `$${fmtNum(c.min_mcap_usd, 0)}`],
+      ['Max MCAP', c.max_mcap_usd > 0 ? `$${fmtNum(c.max_mcap_usd, 0)}` : 'off'],
+      ['Min Holders', c.min_holders > 0 ? `${fmtNum(c.min_holders, 0)}` : 'off'],
+      ['Max Top20 Holder %', c.max_top20_holder_percent < 100 ? `${fmtNum(c.max_top20_holder_percent, 0)}%` : 'off'],
+      ['Min Saved Wallet Holders', c.min_saved_wallet_holders > 0 ? `${fmtNum(c.min_saved_wallet_holders, 0)}` : 'off'],
+      ['Max ATH Distance', c.max_ath_distance_pct < 0 ? `${fmtNum(c.max_ath_distance_pct, 0)}%` : 'off'],
+    ],
+  });
+
+  sections.push({
+    title: 'Filters · Fees & Volume',
+    rows: [
+      ['Min Creator Fee Claim', fmtSolRaw(c.min_fee_claim_sol)],
+      ['Min GMGN Trading Fee', fmtSolRaw(c.min_gmgn_total_fee_sol)],
+      ['Min Graduated Volume', `$${fmtNum(c.min_graduated_volume_usd, 0)}`],
+    ],
+  });
+
+  sections.push({
+    title: 'Filters · Trending',
+    rows: [
+      ['Min Trend Volume', `$${fmtNum(c.trending_min_volume_usd, 0)}`],
+      ['Min Trend Swaps', `${fmtNum(c.trending_min_swaps, 0)}`],
+      ['Max Rug Ratio', fmtRatioPct(c.trending_max_rug_ratio)],
+      ['Max Bundler Rate', fmtRatioPct(c.trending_max_bundler_rate)],
+    ],
+  });
+
+  sections.push({
+    title: 'Stochastic RSI (optional)',
+    rows: [
+      ['Enabled', fmtBool(c.use_stoch_rsi)],
+      ['Timeframe', String(c.stoch_rsi_resolution || '15m')],
+      ['Overbought (OB)', `${fmtNum(c.stoch_rsi_overbought ?? 80, 0)}`],
+      ['Oversold (OS)', `${fmtNum(c.stoch_rsi_oversold ?? 20, 0)}`],
+      ['Reject Overbought', fmtBool(c.stoch_rsi_reject_overbought !== false)],
+      ['Require Bullish Cross', fmtBool(c.stoch_rsi_require_bullish_cross)],
+      ['Require Oversold', fmtBool(c.stoch_rsi_require_oversold)],
+    ],
+  });
+
+  return sections;
+}
+
 function strategyPage() {
   const s = getEnabledStrategy();
-  const rows = strategySummaryRows(s?.config || {});
+  const c = s?.config || {};
+  const sections = strategySectionRows(c);
+
+  const summaryTiles = [
+    ['Strategy', `${esc(s?.id || '-')} · ${esc(s?.name || '-')}`],
+    ['Entry', esc(c.entry_mode || '-')],
+    ['Size', esc(fmtSolRaw(c.position_size_sol))],
+    ['TP / SL', `${fmtNum(c.tp_percent, 0)}% / ${fmtNum(c.sl_percent, 0)}%`],
+    ['Max Pos', `${fmtNum(c.max_open_positions, 0)}`],
+    ['LLM', c.use_llm ? `min ${fmtNum(c.llm_min_confidence, 0)}%` : 'off'],
+    ['Stoch RSI', c.use_stoch_rsi ? `on · ${esc(c.stoch_rsi_resolution || '15m')}` : 'off'],
+  ];
+
+  const tilesHtml = summaryTiles
+    .map(([k, v]) => `<div class='tile'><div class='k'>${esc(k)}</div><div class='v' style='font-size:15px'>${v}</div></div>`)
+    .join('');
+
+  const sectionsHtml = sections.map((sec) => `
+    <div class='strat-section'>
+      <h3 class='strat-section-title'>${esc(sec.title)}</h3>
+      <div class='strat-grid'>
+        ${sec.rows.map(([k, v]) => `<div class='strat-cell'><div class='k'>${esc(k)}</div><div class='v'>${esc(String(v))}</div></div>`).join('')}
+      </div>
+    </div>
+  `).join('');
+
   return renderShell('Strategy', `
-    <div class='summary'>
-      <div class='tile'><div class='k'>Strategy ID</div><div class='v'>${esc(s?.id || '-')}</div></div>
-      <div class='tile'><div class='k'>Name</div><div class='v'>${esc(s?.name || '-')}</div></div>
-    </div>
-    <div class='strat-list'>
-      ${rows.map(([k, v]) => `<div><div class='k'>${esc(k)}</div><div class='v' style='font-size:15px'>${esc(v)}</div></div>`).join('')}
-    </div>
+    <div class='summary'>${tilesHtml}</div>
+    <style>
+      .strat-section { margin-top: 18px; border: 1px solid var(--line); background: rgba(15,23,42,0.55); border-radius: 14px; padding: 14px 16px; }
+      .strat-section-title { margin: 0 0 10px; font-size: 14px; letter-spacing: .4px; color: #cbd5e1; text-transform: uppercase; }
+      .strat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+      .strat-cell { background: rgba(2,6,23,0.55); border: 1px solid #1f2a44; border-radius: 10px; padding: 10px 12px; }
+      .strat-cell .k { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+      .strat-cell .v { color: var(--text); font-size: 14px; font-weight: 600; word-break: break-word; }
+    </style>
+    ${sectionsHtml}
   `);
 }
 
