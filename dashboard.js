@@ -352,10 +352,11 @@ function renderShell(title, body) {
 
     .layout {
       display: grid;
-      grid-template-columns: 1.3fr 0.7fr;
-      gap: 12px;
+      grid-template-columns: 1fr;
+      gap: 14px;
       align-items: start;
     }
+    .layout .side { display: none; }
     @media (max-width: 980px) { .layout { grid-template-columns: 1fr; } }
 
     .list {
@@ -435,6 +436,67 @@ function renderShell(title, body) {
       backdrop-filter: blur(3px);
     }
     .side h3 { margin: 0 0 10px; font-size: 17px; letter-spacing: .2px; }
+
+    .drawer-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(2, 6, 23, 0.55);
+      backdrop-filter: blur(2px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .2s ease;
+      z-index: 70;
+    }
+    .drawer-backdrop.open { opacity: 1; pointer-events: auto; }
+
+    .side.drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: min(620px, 96vw);
+      height: 100dvh;
+      min-height: 100dvh;
+      border-radius: 0;
+      border-left: 1px solid var(--line);
+      border-right: 0;
+      border-top: 0;
+      border-bottom: 0;
+      padding: 0;
+      z-index: 80;
+      overflow: hidden;
+      transform: translateX(102%);
+      transition: transform .22s ease;
+      display: flex;
+      flex-direction: column;
+    }
+    .side.drawer.open { transform: translateX(0); }
+    .drawer-head {
+      display:flex; align-items:center; justify-content:space-between; gap:10px;
+      padding: 14px 16px;
+      border-bottom: 1px solid #1e293b;
+      background: linear-gradient(180deg, #0f172aee, #0b1224ee);
+      position: sticky; top: 0; z-index: 5;
+    }
+    .drawer-head h3 { margin:0; font-size: 15px; letter-spacing:.2px; }
+    .drawer-head .nav-grp { display:flex; gap:6px; align-items:center; }
+    .drawer-body { padding: 14px 16px; overflow-y:auto; flex:1; }
+    .drawer-section { margin-bottom: 14px; }
+    .drawer-section h4 {
+      margin: 0 0 8px; font-size: 11px; letter-spacing: .8px; text-transform: uppercase;
+      color: #94a5d4;
+      border-left: 3px solid #3b82f6; padding-left: 8px;
+    }
+    .drawer-close {
+      appearance:none; border:1px solid #334155; background:#0f172a; color:#cbd5e1;
+      border-radius:10px; padding:6px 10px; cursor:pointer; font-size:12px; font-weight:700;
+    }
+    .drawer-close:hover { border-color:#60a5fa; color:#e0ecff; }
+    .drawer-nav-btn {
+      appearance:none; border:1px solid #334155; background:#0f172a; color:#cbd5e1;
+      border-radius:8px; padding:5px 9px; cursor:pointer; font-size:12px; font-weight:700;
+    }
+    .drawer-nav-btn:hover:not(:disabled) { border-color:#60a5fa; color:#e0ecff; }
+    .drawer-nav-btn:disabled { opacity:.4; cursor:not-allowed; }
     .detail-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -779,19 +841,12 @@ function positionsPage() {
     const pnlText = isClosed ? fmtPct(p.pnl_percent) : 'LIVE';
     const statusClass = p.status === 'open' ? 'b-open' : 'b-closed';
 
-    const compactMeta = isClosed
-      ? `
-        <div>Size: <b>${fmtNum(p.size_sol, 4)} SOL</b></div>
-        <div>Age: <b>${esc(fmtAgeSince(p.opened_at_ms))}</b></div>
-        <div>Entry MCAP: <b>$${fmtNum(p.entry_mcap, 0)}</b></div>
-        <div>Exit MCAP: <b>$${fmtNum(p.exit_mcap, 0)}</b></div>
-        <div>PnL %: <b class='${pnlClass}'>${fmtPct(p.pnl_percent)}</b></div>
-      `
-      : `
-        <div>Size: <b>${fmtNum(p.size_sol, 4)} SOL</b></div>
-        <div>Age: <b>${esc(fmtAgeSince(p.opened_at_ms))}</b></div>
-        <div>Entry MCAP: <b>$${fmtNum(p.entry_mcap, 0)}</b></div>
-      `;
+    const compactMeta = `
+      <div>Size: <b>${fmtNum(p.size_sol, 4)} SOL</b></div>
+      <div>Age: <b>${esc(fmtAgeSince(p.opened_at_ms))}</b></div>
+      <div>Entry MCAP: <b>$${fmtNum(p.entry_mcap, 0)}</b></div>
+      ${isClosed ? `<div>PnL %: <b class='${pnlClass}'>${fmtPct(p.pnl_percent)}</b></div>` : `<div>Status: <b>Monitoring</b></div>`}
+    `;
 
     const hiddenStyle = '';
     const sortPnl = (p.pnl_percent == null) ? '' : Number(p.pnl_percent);
@@ -866,10 +921,36 @@ function positionsPage() {
         <div class='k'>Select one card to inspect its full trade detail.</div>
       </div>
     </div>
+    <style>
+      #pos-list { grid-template-columns: repeat(3, minmax(240px, 1fr)); }
+      @media (max-width: 1200px) { #pos-list { grid-template-columns: repeat(2, minmax(240px, 1fr)); } }
+      @media (max-width: 760px) { #pos-list { grid-template-columns: 1fr; } }
+    </style>
+    <div class='drawer-backdrop' id='drawer-backdrop'></div>
+    <div class='side drawer' id='detail-drawer'>
+      <div class='drawer-head'>
+        <h3>Position Detail</h3>
+        <div class='nav-grp'>
+          <button class='drawer-nav-btn' id='drawer-prev'>←</button>
+          <button class='drawer-nav-btn' id='drawer-next'>→</button>
+          <button class='drawer-close' id='drawer-close'>Close</button>
+        </div>
+      </div>
+      <div class='drawer-body' id='drawer-content'>
+        <div class='k'>Select one card to inspect its full trade detail.</div>
+      </div>
+    </div>
 
     <script>
       const panel = document.getElementById('detail-panel');
+      const drawer = document.getElementById('detail-drawer');
+      const drawerBackdrop = document.getElementById('drawer-backdrop');
+      const drawerContent = document.getElementById('drawer-content');
+      const drawerClose = document.getElementById('drawer-close');
+      const drawerPrev = document.getElementById('drawer-prev');
+      const drawerNext = document.getElementById('drawer-next');
       let cards = Array.from(document.querySelectorAll('.pos'));
+      let currentDetailId = null;
       const buttons = Array.from(document.querySelectorAll('.fbtn[data-filter]'));
       const sortSelect = document.getElementById('sort-select');
       const quickFilter = document.getElementById('quick-filter');
@@ -888,7 +969,12 @@ function positionsPage() {
       function safe(v){ return (v === null || v === undefined) ? '-' : String(v); }
       function iso(ms){ try { return ms ? new Date(ms).toISOString() : '-' ; } catch { return '-'; } }
       function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
-      function showLoading(){ panel.innerHTML = '<h3 style="margin:0 0 10px">Position Detail</h3><div class="k">Loading detail…</div>'; }
+      function openDrawer(){ if (drawer) drawer.classList.add('open'); if (drawerBackdrop) drawerBackdrop.classList.add('open'); document.body.style.overflow = 'hidden'; }
+      function closeDrawer(){ if (drawer) drawer.classList.remove('open'); if (drawerBackdrop) drawerBackdrop.classList.remove('open'); document.body.style.overflow = ''; currentDetailId = null; if (drawerPrev) drawerPrev.disabled = true; if (drawerNext) drawerNext.disabled = true; Array.from(listEl.querySelectorAll('.pos')).forEach((x) => x.classList.remove('active')); }
+      function showLoading(){ if (drawerContent) drawerContent.innerHTML = '<div class="k">Loading detail…</div>'; if (panel) panel.innerHTML = '<h3 style="margin:0 0 10px">Position Detail</h3><div class="k">Loading detail…</div>'; }
+      function updateDrawerNav(){ if (!currentDetailId) return; const visible = getVisibleCards(); const idx = visible.findIndex(el => el.dataset.id === currentDetailId); if (drawerPrev) drawerPrev.disabled = idx <= 0; if (drawerNext) drawerNext.disabled = idx < 0 || idx >= visible.length - 1; }
+      function getVisibleCards(){ return Array.from(listEl.querySelectorAll('.pos')); }
+      function openCardDetail(el){ Array.from(listEl.querySelectorAll('.pos')).forEach((x) => x.classList.remove('active')); el.classList.add('active'); currentDetailId = el.dataset.id; showLoading(); updateDrawerNav(); const id = el.dataset.id; loadDetail(id).then(pos => { renderDetail(pos || {}); }).catch(() => { if (drawerContent) drawerContent.innerHTML = '<div class="k">Failed to load detail.</div>'; if (panel) panel.innerHTML = '<h3 style="margin:0 0 10px">Position Detail</h3><div class="k">Failed to load detail.</div>'; openDrawer(); }); }
 
       function fmtNumJs(n, d = 2) {
         if (n === null || n === undefined || Number.isNaN(Number(n))) return '-';
@@ -915,15 +1001,12 @@ function positionsPage() {
         const isClosed = p.status === 'closed';
         const pnlClass = p.pnl_percent == null ? '' : (Number(p.pnl_percent) >= 0 ? 'up' : 'dn');
         const statusClass = p.status === 'open' ? 'b-open' : 'b-closed';
-        const compactMeta = isClosed
-          ? "<div>Size: <b>" + fmtNumJs(p.size_sol, 4) + " SOL</b></div>"
-            + "<div>Age: <b>" + escHtml(fmtAgeSinceJs(p.opened_at_ms)) + "</b></div>"
-            + "<div>Entry MCAP: <b>$" + fmtNumJs(p.entry_mcap, 0) + "</b></div>"
-            + "<div>Exit MCAP: <b>$" + fmtNumJs(p.exit_mcap, 0) + "</b></div>"
-            + "<div>PnL %: <b class='" + pnlClass + "'>" + fmtPctJs(p.pnl_percent) + "</b></div>"
-          : "<div>Size: <b>" + fmtNumJs(p.size_sol, 4) + " SOL</b></div>"
-            + "<div>Age: <b>" + escHtml(fmtAgeSinceJs(p.opened_at_ms)) + "</b></div>"
-            + "<div>Entry MCAP: <b>$" + fmtNumJs(p.entry_mcap, 0) + "</b></div>";
+        const compactMeta = "<div>Size: <b>" + fmtNumJs(p.size_sol, 4) + " SOL</b></div>"
+          + "<div>Age: <b>" + escHtml(fmtAgeSinceJs(p.opened_at_ms)) + "</b></div>"
+          + "<div>Entry MCAP: <b>$" + fmtNumJs(p.entry_mcap, 0) + "</b></div>"
+          + (isClosed
+              ? ("<div>PnL %: <b class='" + pnlClass + "'>" + fmtPctJs(p.pnl_percent) + "</b></div>")
+              : "<div>Status: <b>Monitoring</b></div>");
 
         const sortPnl = (p.pnl_percent == null) ? '' : Number(p.pnl_percent);
         const sortMcap = isClosed ? (p.exit_mcap == null ? (p.entry_mcap == null ? '' : Number(p.entry_mcap)) : Number(p.exit_mcap)) : (p.entry_mcap == null ? '' : Number(p.entry_mcap));
@@ -1003,18 +1086,7 @@ function positionsPage() {
 
       function attachCardClicks(scopeCards) {
         scopeCards.forEach((el) => {
-          el.addEventListener('click', async () => {
-            Array.from(listEl.querySelectorAll('.pos')).forEach((x) => x.classList.remove('active'));
-            el.classList.add('active');
-            const id = el.dataset.id;
-            showLoading();
-            try {
-              const pos = await loadDetail(id);
-              renderDetail(pos || {});
-            } catch {
-              panel.innerHTML = '<h3 style="margin:0 0 10px">Position Detail</h3><div class="k">Failed to load detail.</div>';
-            }
-          });
+          el.addEventListener('click', () => openCardDetail(el));
         });
       }
 
@@ -1062,7 +1134,7 @@ function positionsPage() {
         const holdMs = (pos.opened_at_ms && pos.closed_at_ms) ? (Number(pos.closed_at_ms) - Number(pos.opened_at_ms)) : null;
         const holdMin = holdMs == null ? '-' : Math.round(holdMs / 60000) + 'm';
 
-        panel.innerHTML = ''
+        const detailHtml = ''
           + '<h3 style="margin:0 0 10px">' + escHtml(safe(pos.symbol || 'Unknown')) + ' <span class="badge ' + statusClass + '">' + escHtml(safe(String(pos.status).toUpperCase())) + '</span></h3>'
           + '<div class="ext" style="margin-bottom:10px">'
           + '<a class="gmgn" target="_blank" rel="noopener" href="' + gmgn + '">Open GMGN</a>'
@@ -1092,6 +1164,9 @@ function positionsPage() {
           + '<div class="dk">Exit Tx Hash</div><div class="dv">' + exitTxCell + '</div>'
           + '<div class="dk">Mint</div><div class="dv"><code>' + escHtml(safe(pos.mint)) + '</code></div>'
           + '</div>';
+        if (drawerContent) drawerContent.innerHTML = detailHtml;
+        if (panel) panel.innerHTML = detailHtml;
+        openDrawer();
       }
 
       buttons.forEach((btn) => {
@@ -1108,6 +1183,11 @@ function positionsPage() {
       if (quickFilter) quickFilter.addEventListener('change', () => { currentQuick = quickFilter.value; currentPage = 1; renderPage(); });
       if (prevBtn) prevBtn.addEventListener('click', () => { if (currentPage > 1) { currentPage--; renderPage(); } });
       if (nextBtn) nextBtn.addEventListener('click', () => { currentPage++; renderPage(); });
+      if (drawerClose) drawerClose.addEventListener('click', closeDrawer);
+      if (drawerBackdrop) drawerBackdrop.addEventListener('click', closeDrawer);
+      if (drawerPrev) drawerPrev.addEventListener('click', () => { if (!currentDetailId) return; const visible = getVisibleCards(); const idx = visible.findIndex(el => el.dataset.id === currentDetailId); if (idx > 0) openCardDetail(visible[idx - 1]); });
+      if (drawerNext) drawerNext.addEventListener('click', () => { if (!currentDetailId) return; const visible = getVisibleCards(); const idx = visible.findIndex(el => el.dataset.id === currentDetailId); if (idx >= 0 && idx < visible.length - 1) openCardDetail(visible[idx + 1]); });
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
 
       function applyRealtimePayload(payload){
         const byMint = payload && payload.by_mint ? payload.by_mint : {};
