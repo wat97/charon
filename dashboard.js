@@ -1393,23 +1393,47 @@ function candidatesPage() {
     const vol = metrics.trendingVolumeUsd ?? metrics.volumeUsd;
     const swaps = metrics.trendingSwaps ?? metrics.swaps;
 
-    return `<div class='pos ${r.status === 'accepted' ? 'pos-open' : 'pos-closed'}' data-status='${esc(r.status)}'
+    const createdAgo = fmtAgeSince(r.created_at_ms);
+    const updatedAgo = fmtAgeSince(r.updated_at_ms);
+    const tokenName = token.name || sym;
+    const sourceCount = cj.signal?.sources?.length || cj.signal?.source_count || 0;
+    const top20 = metrics.top20HolderPercent ?? metrics.top20_holder_percent;
+    const savedWallets = metrics.savedWalletHolders ?? metrics.saved_wallet_holders;
+    const rug = metrics.trendingRugRatio ?? metrics.rug_ratio;
+    const bundler = metrics.trendingBundlerRate ?? metrics.bundler_rate;
+    const ath = metrics.athDistancePct ?? metrics.ath_distance_pct;
+    const failPreview = fails.length ? fails.slice(0, 3).map((x) => `<li>${esc(x)}</li>`).join('') : '<li>No filter failures recorded</li>';
+
+    return `<div class='pos ${r.status === 'accepted' ? 'pos-open' : 'pos-closed'} cand-card' data-status='${esc(r.status)}'
       data-sort-created='${esc(r.created_at_ms || 0)}'
       data-sort-mcap='${esc(mcap == null ? '' : Number(mcap))}'
       data-sort-vol='${esc(vol == null ? '' : Number(vol))}'
       data-sort-swaps='${esc(swaps == null ? '' : Number(swaps))}'
       data-sort-symbol='${esc(sym)}'>
       <div class='pos-top'>
-        <div class='sym'>${esc(sym)} <span class='k'>#${esc(r.id)}</span></div>
+        <div>
+          <div class='sym'>${esc(sym)} <span class='k'>#${esc(r.id)}</span></div>
+          <div class='k' style='margin-top:3px'>${esc(tokenName)}</div>
+        </div>
         <span class='badge ${r.status === 'accepted' ? 'b-open' : 'b-closed'}'>${esc((r.status || 'new').toUpperCase())}</span>
       </div>
-      <div class='meta'>
+      <div class='meta cand-meta'>
         <div>Mint: <b><code>${esc(String(r.mint || '').slice(0, 8))}...${esc(String(r.mint || '').slice(-4))}</code></b></div>
-        <div>Created: <b>${esc(fmtAgeSince(r.created_at_ms))} ago</b></div>
+        <div>Created: <b>${esc(createdAgo)} ago</b></div>
+        <div>Updated: <b>${esc(updatedAgo)} ago</b></div>
+        <div>Sources: <b>${fmtNum(sourceCount, 0)}</b></div>
         <div>MCAP: <b>$${fmtNum(mcap, 0)}</b></div>
         <div>Volume: <b>$${fmtNum(vol, 0)}</b></div>
         <div>Swaps: <b>${fmtNum(swaps, 0)}</b></div>
-        <div>Failures: <b>${fails.length}</b>${fails.length ? ' · ' + esc(fails.slice(0,2).join(' | ')) : ''}</div>
+        <div>Top20: <b>${top20 == null ? '-' : fmtNum(top20, 1) + '%'}</b></div>
+        <div>Saved Wallets: <b>${savedWallets == null ? '-' : fmtNum(savedWallets, 0)}</b></div>
+        <div>ATH Dist: <b>${ath == null ? '-' : fmtNum(ath, 1) + '%'}</b></div>
+        <div>Rug Ratio: <b>${rug == null ? '-' : fmtNum(Number(rug) * 100, 1) + '%'}</b></div>
+        <div>Bundler: <b>${bundler == null ? '-' : fmtNum(Number(bundler) * 100, 1) + '%'}</b></div>
+      </div>
+      <div class='cand-fails'>
+        <div class='k' style='margin-bottom:6px'>Filter Notes · ${fails.length} item</div>
+        <ul>${failPreview}</ul>
       </div>
     </div>`;
   }).join('');
@@ -1423,7 +1447,7 @@ function candidatesPage() {
     </div>
 
     <div class='toolbar' style='display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px'>
-      <div class='k'>Latest 500 candidates · 20 per page</div>
+      <div class='k'>Latest 500 candidates · 10 per page · 2 cards per row</div>
       <div style='display:flex;flex-wrap:wrap;align-items:center;gap:10px'>
         <div class='filters'>
           <button class='fbtn active' data-cf='all'>All</button>
@@ -1449,6 +1473,17 @@ function candidatesPage() {
       <div class='k' id='c-pageinfo'>Page 1/1</div>
       <button id='c-next' class='fbtn'>Next →</button>
     </div>
+    <style>
+      #c-list { grid-template-columns: repeat(2, minmax(280px, 1fr)); }
+      @media (max-width: 720px) { #c-list { grid-template-columns: 1fr; } }
+      .cand-card { padding: 12px; }
+      .cand-meta { grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+      .cand-meta div { font-size: 11px; }
+      .cand-meta div b { font-size: 12px; }
+      .cand-fails { margin-top: 10px; }
+      .cand-fails ul { margin: 0 0 0 16px; padding: 0; }
+      .cand-fails li { font-size: 10px; color: #94a5d4; margin-bottom: 2px; }
+    </style>
 
     <script>
       const cAll = Array.from(document.querySelectorAll('#c-list .pos'));
@@ -1458,7 +1493,7 @@ function candidatesPage() {
       const cPrev = document.getElementById('c-prev');
       const cNext = document.getElementById('c-next');
       const cInfo = document.getElementById('c-pageinfo');
-      const C_PAGE_SIZE = 20;
+      const C_PAGE_SIZE = 10;
       let cPage = 1;
       let cFilter = 'all';
       let cSortKey = 'created_desc';
