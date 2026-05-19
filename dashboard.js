@@ -52,8 +52,8 @@ function getEnabledStrategy() {
 }
 
 function getPositions() {
-  const open = db.prepare("SELECT id,symbol,mint,status,opened_at_ms,size_sol,entry_price,entry_mcap,high_water_mcap,tp_percent,sl_percent,trailing_enabled,trailing_percent,strategy_id FROM dry_run_positions WHERE status='open' ORDER BY opened_at_ms DESC").all();
-  const closed = db.prepare("SELECT id,symbol,mint,status,opened_at_ms,closed_at_ms,size_sol,entry_price,entry_mcap,high_water_mcap,exit_price,exit_mcap,exit_reason,tp_percent,sl_percent,trailing_enabled,trailing_percent,pnl_percent,pnl_sol,strategy_id FROM dry_run_positions WHERE status='closed' ORDER BY opened_at_ms DESC").all();
+  const open = db.prepare("SELECT id,symbol,mint,status,opened_at_ms,size_sol,entry_price,entry_mcap,high_water_mcap,tp_percent,sl_percent,trailing_enabled,trailing_percent,entry_signature,exit_signature,execution_mode,strategy_id FROM dry_run_positions WHERE status='open' ORDER BY opened_at_ms DESC").all();
+  const closed = db.prepare("SELECT id,symbol,mint,status,opened_at_ms,closed_at_ms,size_sol,entry_price,entry_mcap,high_water_mcap,exit_price,exit_mcap,exit_reason,tp_percent,sl_percent,trailing_enabled,trailing_percent,pnl_percent,pnl_sol,entry_signature,exit_signature,execution_mode,strategy_id FROM dry_run_positions WHERE status='closed' ORDER BY opened_at_ms DESC").all();
   return { open, closed };
 }
 
@@ -481,20 +481,27 @@ function generateRecommendations(summary, advanced, strategy) {
 
 function positionsPage() {
   const { open, closed } = getPositions();
-  const summary = getPnlSummary();
-  const history = getClosedSeries();
-
-  const winRate = summary.total ? (summary.wins / summary.total) * 100 : 0;
   const all = [...open, ...closed];
 
   const cards = all.map((p, i) => {
+    const isClosed = p.status === 'closed';
     const pnlClass = p.pnl_percent == null ? '' : (Number(p.pnl_percent) >= 0 ? 'up' : 'dn');
-    const pnlText = p.pnl_percent == null ? 'LIVE' : fmtPct(p.pnl_percent);
+    const pnlText = isClosed ? fmtPct(p.pnl_percent) : 'LIVE';
     const statusClass = p.status === 'open' ? 'b-open' : 'b-closed';
-    const mint = p.mint || '';
-    const gmgn = `https://gmgn.ai/sol/token/${esc(mint)}`;
-    const trojan = `https://t.me/${esc(TROJAN_BOT)}?start=${esc(mint)}`;
-    const solscan = `https://solscan.io/token/${esc(mint)}`;
+
+    const compactMeta = isClosed
+      ? `
+        <div>Size: <b>${fmtNum(p.size_sol, 4)} SOL</b></div>
+        <div>Age: <b>${esc(fmtAgeSince(p.opened_at_ms))}</b></div>
+        <div>Entry MCAP: <b>$${fmtNum(p.entry_mcap, 0)}</b></div>
+        <div>Exit MCAP: <b>$${fmtNum(p.exit_mcap, 0)}</b></div>
+        <div>PnL %: <b class='${pnlClass}'>${fmtPct(p.pnl_percent)}</b></div>
+      `
+      : `
+        <div>Size: <b>${fmtNum(p.size_sol, 4)} SOL</b></div>
+        <div>Age: <b>${esc(fmtAgeSince(p.opened_at_ms))}</b></div>
+        <div>Entry MCAP: <b>$${fmtNum(p.entry_mcap, 0)}</b></div>
+      `;
 
     return `<div class='pos' data-i='${i}' data-status='${esc(p.status)}'>
       <div class='pos-top'>
@@ -502,40 +509,13 @@ function positionsPage() {
         <span class='badge ${statusClass}'>${esc(String(p.status).toUpperCase())}</span>
       </div>
       <div class='pnl-big ${pnlClass}'>${esc(pnlText)}</div>
-      <div class='meta'>
-        <div>Size: <b>${fmtNum(p.size_sol, 4)} SOL</b></div>
-        <div>Age: <b>${esc(fmtAgeSince(p.opened_at_ms))}</b></div>
-        <div>Entry: <b>${fmtNum(p.entry_price, 8)}</b></div>
-        <div>Entry MCAP: <b>$${fmtNum(p.entry_mcap, 0)}</b></div>
-        <div>Exit: <b>${fmtNum(p.exit_price, 8)}</b></div>
-        <div>Exit MCAP: <b>$${fmtNum(p.exit_mcap, 0)}</b></div>
-        <div>SL: <b>${fmtNum(p.sl_percent, 0)}%</b></div>
-        <div>ID: <b>#${esc(p.id)}</b></div>
-      </div>
-      <div class='ext'>
-        <a class='gmgn' target='_blank' rel='noopener' href='${gmgn}'>Open GMGN</a>
-        <a class='trojan' target='_blank' rel='noopener' href='${trojan}'>Open Trojan</a>
-        <a class='solscan' target='_blank' rel='noopener' href='${solscan}'>Solscan</a>
-      </div>
+      <div class='meta'>${compactMeta}</div>
     </div>`;
   }).join('');
 
   const payloadJson = JSON.stringify(all).replace(/</g, '\\u003c');
 
   return renderShell('Positions', `
-    <div class='summary'>
-      <div class='tile'><div class='k'>Open Positions</div><div class='v'>${open.length}</div></div>
-      <div class='tile'><div class='k'>Closed Positions</div><div class='v'>${closed.length}</div></div>
-      <div class='tile'><div class='k'>Total PnL</div><div class='v ${Number(summary.total_pnl_sol) >= 0 ? 'up' : 'dn'}'>${fmtSol(summary.total_pnl_sol)}</div></div>
-      <div class='tile'><div class='k'>Win Rate</div><div class='v'>${fmtNum(winRate, 1)}%</div></div>
-      <div class='tile'><div class='k'>Average Trade</div><div class='v ${Number(summary.avg_pnl_percent) >= 0 ? 'up' : 'dn'}'>${fmtPct(summary.avg_pnl_percent)}</div></div>
-      <div class='tile'><div class='k'>Best / Worst</div><div class='v'><span class='up'>${fmtPct(summary.best_pnl_percent)}</span> <span class='muted'>/</span> <span class='dn'>${fmtPct(summary.worst_pnl_percent)}</span></div></div>
-    </div>
-
-    <div class='chart'>
-      <div class='chart-title'>Cumulative PnL Trend (closed positions)</div>
-      ${buildEquityCurveSvg(history)}
-    </div>
 
     <div class='toolbar'>
       <div class='k'>Click a card to open full transaction detail on the right panel.</div>
@@ -577,6 +557,12 @@ function positionsPage() {
         const gmgn = 'https://gmgn.ai/sol/token/' + encodeURIComponent(mint);
         const trojan = 'https://t.me/' + encodeURIComponent(TROJAN_BOT) + '?start=' + encodeURIComponent(mint);
         const solscan = 'https://solscan.io/token/' + encodeURIComponent(mint);
+        const mode = (pos.execution_mode || 'dry_run').toString();
+        const isDry = mode.includes('dry');
+        const entryTx = isDry ? 'dry_run' : (pos.entry_signature || '-');
+        const exitTx = isDry ? 'dry_run' : (pos.exit_signature || '-');
+        const holdMs = (pos.opened_at_ms && pos.closed_at_ms) ? (Number(pos.closed_at_ms) - Number(pos.opened_at_ms)) : null;
+        const holdMin = holdMs == null ? '-' : Math.round(holdMs / 60000) + 'm';
 
         panel.innerHTML = ''
           + '<h3 style="margin:0 0 10px">' + escHtml(safe(pos.symbol || 'Unknown')) + ' <span class="badge ' + statusClass + '">' + escHtml(safe(String(pos.status).toUpperCase())) + '</span></h3>'
@@ -588,6 +574,7 @@ function positionsPage() {
           + '<div class="detail-grid">'
           + '<div class="dk">Position ID</div><div class="dv">#' + escHtml(safe(pos.id)) + '</div>'
           + '<div class="dk">Strategy</div><div class="dv">' + escHtml(safe(pos.strategy_id)) + '</div>'
+          + '<div class="dk">Execution Mode</div><div class="dv">' + escHtml(mode) + '</div>'
           + '<div class="dk">PnL %</div><div class="dv ' + pnlClass + '">' + escHtml(pnlText) + '</div>'
           + '<div class="dk">PnL SOL</div><div class="dv ' + pnlClass + '">' + escHtml(pnlSolText) + '</div>'
           + '<div class="dk">Size</div><div class="dv">' + escHtml(safe(pos.size_sol)) + ' SOL</div>'
@@ -595,11 +582,16 @@ function positionsPage() {
           + '<div class="dk">Entry MCAP</div><div class="dv">$' + escHtml(safe(pos.entry_mcap == null ? '-' : Number(pos.entry_mcap).toLocaleString('en-US'))) + '</div>'
           + '<div class="dk">Exit Price</div><div class="dv">' + escHtml(safe(pos.exit_price)) + '</div>'
           + '<div class="dk">Exit MCAP</div><div class="dv">$' + escHtml(safe(pos.exit_mcap == null ? '-' : Number(pos.exit_mcap).toLocaleString('en-US'))) + '</div>'
+          + '<div class="dk">High-Water MCAP</div><div class="dv">$' + escHtml(safe(pos.high_water_mcap == null ? '-' : Number(pos.high_water_mcap).toLocaleString('en-US'))) + '</div>'
           + '<div class="dk">Stop Loss (SL)</div><div class="dv">' + escHtml(safe(pos.sl_percent == null ? '-' : pos.sl_percent + '%')) + '</div>'
           + '<div class="dk">Take Profit (TP)</div><div class="dv">' + escHtml(safe(pos.tp_percent == null ? '-' : pos.tp_percent + '%')) + '</div>'
+          + '<div class="dk">Trailing</div><div class="dv">' + escHtml(safe(pos.trailing_enabled ? ('ON (' + safe(pos.trailing_percent) + '%)') : 'OFF')) + '</div>'
           + '<div class="dk">Exit Reason</div><div class="dv">' + escHtml(safe(pos.exit_reason)) + '</div>'
           + '<div class="dk">Opened At</div><div class="dv">' + escHtml(iso(pos.opened_at_ms)) + '</div>'
           + '<div class="dk">Closed At</div><div class="dv">' + escHtml(iso(pos.closed_at_ms)) + '</div>'
+          + '<div class="dk">Hold Duration</div><div class="dv">' + escHtml(holdMin) + '</div>'
+          + '<div class="dk">Entry Tx Hash</div><div class="dv"><code>' + escHtml(safe(entryTx)) + '</code></div>'
+          + '<div class="dk">Exit Tx Hash</div><div class="dv"><code>' + escHtml(safe(exitTx)) + '</code></div>'
           + '<div class="dk">Mint</div><div class="dv"><code>' + escHtml(safe(pos.mint)) + '</code></div>'
           + '</div>';
       }
