@@ -98,6 +98,10 @@ export async function handleCallback(query) {
     const key = data.replace('stratinput:', '');
     return requestStrategyNumericInput(query, key);
   }
+  if (data.startsWith('stratrotate:')) {
+    const key = data.replace('stratrotate:', '');
+    return rotateStrategySetting(query, key);
+  }
 
   const [kind, id, value] = data.split(':');
   if (kind === 'input') return requestNumericFilterInput(query, id);
@@ -217,7 +221,16 @@ async function handleStratConfig(query, chatId, key) {
   delete newConfig.name;
 
   // Boolean toggles
-  const boolKeys = new Set(['trailing_enabled', 'partial_tp', 'use_llm', 'require_fee_claim']);
+  const boolKeys = new Set([
+    'trailing_enabled',
+    'partial_tp',
+    'use_llm',
+    'require_fee_claim',
+    'use_stoch_rsi',
+    'stoch_rsi_require_bullish_cross',
+    'stoch_rsi_require_oversold',
+    'stoch_rsi_reject_overbought',
+  ]);
   if (boolKeys.has(key)) {
     newConfig[key] = !strat[key];
     updateStrategyConfig(strat.id, newConfig);
@@ -237,6 +250,24 @@ async function handleStratConfig(query, chatId, key) {
 
   // Fallback: show current value
   return bot.sendMessage(chatId, `Current ${key}: ${formatStratValue(key, strat[key])}\nUse /stratset ${strat.id} ${key} <value> to change.`);
+}
+
+async function rotateStrategySetting(query, key) {
+  const strat = activeStrategy();
+  const newConfig = { ...strat };
+  delete newConfig.id;
+  delete newConfig.name;
+
+  if (key === 'stoch_rsi_resolution') {
+    const options = ['1m', '5m', '15m', '1h', '4h', '1d'];
+    const current = String(strat.stoch_rsi_resolution || '15m');
+    const idx = options.indexOf(current);
+    const next = options[(idx + 1) % options.length];
+    newConfig.stoch_rsi_resolution = next;
+    updateStrategyConfig(strat.id, newConfig);
+    return editMenuMessage(query, strategyMenuText(), strategyKeyboard());
+  }
+  return null;
 }
 
 async function updateSettingFromButton(query, key, value) {

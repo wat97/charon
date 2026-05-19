@@ -16,6 +16,7 @@ import { setDegenHandler } from '../signals/trending.js';
 import { setCandidateHandler } from '../signals/feeClaim.js';
 import { short } from '../format.js';
 import { escapeHtml } from '../format.js';
+import { checkStochRsiFilter } from '../analytics/stochasticRsi.js';
 
 export const seenSignalCandidates = new Map();
 
@@ -39,6 +40,30 @@ export async function processCandidateFromSignals(signals) {
   }
 
   const strat = activeStrategy();
+
+  // Optional Stoch RSI filter (GMGN kline-based)
+  const stochCheck = await checkStochRsiFilter(candidate.token.mint, strat);
+  candidate.indicators = candidate.indicators || {};
+  candidate.indicators.stoch_rsi = stochCheck?.data || null;
+  candidate.indicators.stoch_rsi_filter = {
+    enabled: Boolean(strat.use_stoch_rsi),
+    ok: Boolean(stochCheck?.ok),
+    skipped: Boolean(stochCheck?.skipped),
+    reason: stochCheck?.reason || null,
+    resolution: strat.stoch_rsi_resolution || '15m',
+  };
+
+  if (!stochCheck.ok) {
+    candidate.filters = candidate.filters || { passed: true, failures: [] };
+    candidate.filters.passed = false;
+    candidate.filters.failures = Array.isArray(candidate.filters.failures) ? candidate.filters.failures : [];
+    candidate.filters.failures.push(stochCheck.reason || 'stoch_rsi filter failed');
+    upsertCandidate(candidate, signature);
+    updateCandidateStatus(candidateId, 'filtered');
+    console.log(`[candidate] filtered ${candidate.token.mint.slice(0, 8)}... ${stochCheck.reason || 'stoch_rsi filter failed'}`);
+    return;
+  }
+
   let rows, batchDecision, batchId;
 
   if (!strat.use_llm) {
