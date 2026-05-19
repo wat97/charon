@@ -20,6 +20,9 @@ export function menuKeyboard() {
           { text: 'Positions', callback_data: 'menu:positions' },
           { text: 'PnL', callback_data: 'menu:pnl' },
         ],
+        [
+          { text: 'PnL Summary', callback_data: 'menu:pnlsummary' },
+        ],
       ],
     },
   };

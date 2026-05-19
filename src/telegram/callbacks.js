@@ -57,6 +57,10 @@ export async function handleCallback(query) {
     const { sendPnl } = await import('./send.js');
     return sendPnl(chatId, query);
   }
+  if (data === 'menu:pnlsummary') {
+    const { sendPnlSummary } = await import('./commands.js');
+    return sendPnlSummary(chatId, query);
+  }
   if (data === 'menu:settings') return editMenuMessage(query, `${agentText()}\n\n${filtersText()}`, navKeyboard([
     [
       { text: 'Agent', callback_data: 'menu:agent' },

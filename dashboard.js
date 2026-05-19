@@ -2,6 +2,7 @@ import http from 'http';
 import zlib from 'zlib';
 import Database from 'better-sqlite3';
 import { WebSocketServer } from 'ws';
+import { getPnlSummary as analyticsPnlSummary, getClosedSeries as analyticsClosedSeries, computeAdvancedStats as analyticsAdvancedStats, generateRecommendations as analyticsRecommendations } from './src/analytics/pnlSummary.js';
 
 const HOST = process.env.CHARON_DASHBOARD_HOST || '127.0.0.1';
 const PORT = Number(process.env.CHARON_DASHBOARD_PORT || 20120);
@@ -1068,12 +1069,7 @@ function positionsPage() {
       }
 
       async function refreshRealtimePnL(){
-        try {
-          const res = await fetch('/api/realtime-prices', { cache: 'no-store' });
-          if (!res.ok) return;
-          const payload = await res.json();
-          applyRealtimePayload(payload);
-        } catch {}
+        // No-op: realtime prices delivered via WebSocket only.
       }
 
       function connectRealtimeWs(){
@@ -1113,22 +1109,20 @@ function positionsPage() {
         const first = listEl.querySelector('.pos');
         if (first) first.click();
       });
-      refreshRealtimePnL();
       connectRealtimeWs();
       setInterval(() => {
-        refreshRealtimePnL();
         renderPage();
-      }, 30000); // fallback keepalive polling only
+      }, 30000); // periodic re-age labels only
 
     </script>
   `);
 }
 
 function pnlPage() {
-  const summary = getPnlSummary();
-  const history = getClosedSeries();
+  const summary = analyticsPnlSummary();
+  const history = analyticsClosedSeries();
   const strategy = getEnabledStrategy();
-  const advanced = computeAdvancedStats(history, summary);
+  const advanced = analyticsAdvancedStats(history, summary);
   const tips = generateRecommendations(summary, advanced, strategy);
 
   const winRate = summary.total ? (summary.wins / summary.total) * 100 : 0;
@@ -1372,11 +1366,6 @@ const server = http.createServer(async (req, res) => {
       const row = getPositionDetailById(id);
       if (!row) return sendJson(res, 404, { error: 'not found' }, req);
       return sendJson(res, 200, row, req);
-    }
-
-    if (u.pathname === '/api/realtime-prices') {
-      const byMint = await getOpenRealtimeByMint();
-      return sendJson(res, 200, { by_mint: byMint }, req);
     }
 
     if (u.pathname === '/pnl') return sendHtml(res, 200, pnlPage(), req);

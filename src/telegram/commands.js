@@ -29,6 +29,7 @@ import { handleCallback, editMenuMessage } from './callbacks.js';
 import { consumeNumericFilterInput } from './input.js';
 import { runLearning, sendLessons } from '../learning/commands.js';
 import { fetchWalletPnl } from '../enrichment/wallets.js';
+import { getPnlSummary as analyticsPnlSummary, getClosedSeries as analyticsClosedSeries, computeAdvancedStats as analyticsAdvancedStats, generateRecommendations as analyticsRecommendations } from '../analytics/pnlSummary.js';
 
 export async function handleMessage(msg) {
   const text = (msg.text || '').trim();
@@ -75,6 +76,7 @@ export async function handleMessage(msg) {
     updateStrategyConfig(id, newConfig);
     return bot.sendMessage(chatId, `Updated ${id}.${key} = ${value}\n\n${strategyMenuText()}`, { parse_mode: 'HTML' });
   }
+  if (text.startsWith('/pnlsummary')) return sendPnlSummary(chatId);
   if (text.startsWith('/pnl')) return sendPnl(chatId);
   if (text.startsWith('/learn')) {
     const windowArg = text.split(/\s+/)[1] || '12h';
@@ -244,6 +246,7 @@ export function setupTelegram() {
     { command: 'positions', description: 'Show dry-run positions' },
     { command: 'candidate', description: 'Show candidate by mint' },
     { command: 'filters', description: 'Show filters' },
+    { command: 'pnlsummary', description: 'Show PnL summary with insights' },
     { command: 'pnl', description: 'Show saved-wallet PnL' },
     { command: 'learn', description: 'Run manual learning report' },
     { command: 'lessons', description: 'Show active screening lessons' },
@@ -289,6 +292,45 @@ async function sendPnl(chatId, query = null) {
   }
   const text = `📊 <b>PnL</b>\n\n${chunks.join('\n\n')}`;
   return query ? editMenuMessage(query, text, navKeyboard()) : bot.sendMessage(chatId, text, { parse_mode: 'HTML' });
+}
+
+export async function sendPnlSummary(chatId, query = null) {
+  const summary = analyticsPnlSummary();
+  const history = analyticsClosedSeries();
+  const advanced = analyticsAdvancedStats(history, summary);
+  const tips = advanced ? analyticsRecommendations(summary, advanced) : [];
+
+  const lines = [
+    '📈 <b>PnL Summary</b>',
+    '',
+    `Closed trades: <b>${summary.total}</b>`,
+    `Wins/Losses: <b>${summary.wins}</b> / <b>${summary.losses}</b>`,
+    `Total PnL %: <b>${fmtPct(summary.totalPnlPercent)}</b>`,
+    `Total PnL SOL: <b>${summary.totalPnlSol.toFixed(4)}</b>`,
+    `Avg PnL %: <b>${fmtPct(summary.avgPnlPercent)}</b>`,
+    `Best/Worst: <b>${fmtPct(summary.maxPnlPercent)}</b> / <b>${fmtPct(summary.minPnlPercent)}</b>`,
+  ];
+
+  if (advanced) {
+    lines.push(
+      '',
+      `Win rate: <b>${advanced.winRate.toFixed(2)}%</b>`,
+      `Profit factor: <b>${Number.isFinite(advanced.profitFactor) ? advanced.profitFactor.toFixed(2) : '∞'}</b>`,
+      `Max drawdown: <b>${advanced.maxDrawdown.toFixed(2)}%</b>`,
+      `Expectancy: <b>${fmtPct(advanced.expectancy)}</b>`,
+      `P50/P95/P99: <b>${fmtPct(advanced.p50)}</b> / <b>${fmtPct(advanced.p95)}</b> / <b>${fmtPct(advanced.p99)}</b>`,
+    );
+  }
+
+  if (tips.length) {
+    lines.push('', '🧠 <b>Insights</b>');
+    for (const tip of tips.slice(0, 4)) {
+      lines.push(`• ${escapeHtml(tip.text)}`);
+    }
+  }
+
+  const text = lines.join('\n');
+  return query ? editMenuMessage(query, text, navKeyboard()) : bot.sendMessage(chatId, text, { parse_mode: 'HTML', disable_web_page_preview: true });
 }
 
 function parseSetFilter(text) {
