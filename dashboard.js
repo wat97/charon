@@ -52,8 +52,8 @@ function getEnabledStrategy() {
 }
 
 function getPositions() {
-  const open = db.prepare("SELECT id,symbol,mint,status,opened_at_ms,size_sol,entry_price,strategy_id FROM dry_run_positions WHERE status='open' ORDER BY opened_at_ms DESC").all();
-  const closed = db.prepare("SELECT id,symbol,mint,status,opened_at_ms,closed_at_ms,size_sol,entry_price,exit_price,pnl_percent,pnl_sol,strategy_id FROM dry_run_positions WHERE status='closed' ORDER BY opened_at_ms DESC").all();
+  const open = db.prepare("SELECT id,symbol,mint,status,opened_at_ms,size_sol,entry_price,entry_mcap,high_water_mcap,tp_percent,sl_percent,trailing_enabled,trailing_percent,strategy_id FROM dry_run_positions WHERE status='open' ORDER BY opened_at_ms DESC").all();
+  const closed = db.prepare("SELECT id,symbol,mint,status,opened_at_ms,closed_at_ms,size_sol,entry_price,entry_mcap,high_water_mcap,exit_price,exit_mcap,exit_reason,tp_percent,sl_percent,trailing_enabled,trailing_percent,pnl_percent,pnl_sol,strategy_id FROM dry_run_positions WHERE status='closed' ORDER BY opened_at_ms DESC").all();
   return { open, closed };
 }
 
@@ -506,6 +506,10 @@ function positionsPage() {
         <div>Size: <b>${fmtNum(p.size_sol, 4)} SOL</b></div>
         <div>Age: <b>${esc(fmtAgeSince(p.opened_at_ms))}</b></div>
         <div>Entry: <b>${fmtNum(p.entry_price, 8)}</b></div>
+        <div>Entry MCAP: <b>$${fmtNum(p.entry_mcap, 0)}</b></div>
+        <div>Exit: <b>${fmtNum(p.exit_price, 8)}</b></div>
+        <div>Exit MCAP: <b>$${fmtNum(p.exit_mcap, 0)}</b></div>
+        <div>SL: <b>${fmtNum(p.sl_percent, 0)}%</b></div>
         <div>ID: <b>#${esc(p.id)}</b></div>
       </div>
       <div class='ext'>
@@ -588,7 +592,12 @@ function positionsPage() {
           + '<div class="dk">PnL SOL</div><div class="dv ' + pnlClass + '">' + escHtml(pnlSolText) + '</div>'
           + '<div class="dk">Size</div><div class="dv">' + escHtml(safe(pos.size_sol)) + ' SOL</div>'
           + '<div class="dk">Entry Price</div><div class="dv">' + escHtml(safe(pos.entry_price)) + '</div>'
+          + '<div class="dk">Entry MCAP</div><div class="dv">$' + escHtml(safe(pos.entry_mcap == null ? '-' : Number(pos.entry_mcap).toLocaleString('en-US'))) + '</div>'
           + '<div class="dk">Exit Price</div><div class="dv">' + escHtml(safe(pos.exit_price)) + '</div>'
+          + '<div class="dk">Exit MCAP</div><div class="dv">$' + escHtml(safe(pos.exit_mcap == null ? '-' : Number(pos.exit_mcap).toLocaleString('en-US'))) + '</div>'
+          + '<div class="dk">Stop Loss (SL)</div><div class="dv">' + escHtml(safe(pos.sl_percent == null ? '-' : pos.sl_percent + '%')) + '</div>'
+          + '<div class="dk">Take Profit (TP)</div><div class="dv">' + escHtml(safe(pos.tp_percent == null ? '-' : pos.tp_percent + '%')) + '</div>'
+          + '<div class="dk">Exit Reason</div><div class="dv">' + escHtml(safe(pos.exit_reason)) + '</div>'
           + '<div class="dk">Opened At</div><div class="dv">' + escHtml(iso(pos.opened_at_ms)) + '</div>'
           + '<div class="dk">Closed At</div><div class="dv">' + escHtml(iso(pos.closed_at_ms)) + '</div>'
           + '<div class="dk">Mint</div><div class="dv"><code>' + escHtml(safe(pos.mint)) + '</code></div>'
