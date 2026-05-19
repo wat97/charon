@@ -691,6 +691,12 @@ function positionsPage() {
         const isDry = mode.includes('dry');
         const entryTx = isDry ? 'dry_run' : (pos.entry_signature || '-');
         const exitTx = isDry ? 'dry_run' : (pos.exit_signature || '-');
+        const entryTxCell = (!isDry && pos.entry_signature)
+          ? ('<a target="_blank" rel="noopener" href="https://solscan.io/tx/' + encodeURIComponent(pos.entry_signature) + '"><code>' + escHtml(pos.entry_signature) + '</code></a>')
+          : ('<code>' + escHtml(safe(entryTx)) + '</code>');
+        const exitTxCell = (!isDry && pos.exit_signature)
+          ? ('<a target="_blank" rel="noopener" href="https://solscan.io/tx/' + encodeURIComponent(pos.exit_signature) + '"><code>' + escHtml(pos.exit_signature) + '</code></a>')
+          : ('<code>' + escHtml(safe(exitTx)) + '</code>');
         const holdMs = (pos.opened_at_ms && pos.closed_at_ms) ? (Number(pos.closed_at_ms) - Number(pos.opened_at_ms)) : null;
         const holdMin = holdMs == null ? '-' : Math.round(holdMs / 60000) + 'm';
 
@@ -720,8 +726,8 @@ function positionsPage() {
           + '<div class="dk">Opened At</div><div class="dv">' + escHtml(iso(pos.opened_at_ms)) + '</div>'
           + '<div class="dk">Closed At</div><div class="dv">' + escHtml(iso(pos.closed_at_ms)) + '</div>'
           + '<div class="dk">Hold Duration</div><div class="dv">' + escHtml(holdMin) + '</div>'
-          + '<div class="dk">Entry Tx Hash</div><div class="dv"><code>' + escHtml(safe(entryTx)) + '</code></div>'
-          + '<div class="dk">Exit Tx Hash</div><div class="dv"><code>' + escHtml(safe(exitTx)) + '</code></div>'
+          + '<div class="dk">Entry Tx Hash</div><div class="dv">' + entryTxCell + '</div>'
+          + '<div class="dk">Exit Tx Hash</div><div class="dv">' + exitTxCell + '</div>'
           + '<div class="dk">Mint</div><div class="dv"><code>' + escHtml(safe(pos.mint)) + '</code></div>'
           + '</div>';
       }
