@@ -60,7 +60,7 @@ function getPositions() {
 
 function getPositionCardsLite() {
   return db.prepare(`
-    SELECT id,symbol,mint,status,opened_at_ms,size_sol,entry_mcap,exit_mcap,pnl_percent
+    SELECT id,symbol,mint,status,opened_at_ms,size_sol,entry_price,entry_mcap,exit_mcap,pnl_percent
     FROM dry_run_positions
     ORDER BY opened_at_ms DESC
   `).all();
@@ -75,6 +75,76 @@ function getPositionDetailById(id) {
     WHERE id = ?
     LIMIT 1
   `).get(id);
+}
+
+const DEXSCREENER_BASE = 'https://api.dexscreener.com';
+
+async function fetchDexBatchPrices(mints = []) {
+  const out = Object.create(null);
+  const clean = Array.from(new Set((mints || []).map((m) => String(m || '').trim()).filter(Boolean)));
+  if (!clean.length) return out;
+
+  const chunkSize = 30; // keep URL reasonably short
+  for (let i = 0; i < clean.length; i += chunkSize) {
+    const chunk = clean.slice(i, i + chunkSize);
+    const url = `${DEXSCREENER_BASE}/tokens/v1/solana/${encodeURIComponent(chunk.join(','))}`;
+    try {
+      const res = await fetch(url, {
+        headers: { 'Accept': 'application/json', 'User-Agent': 'charon-dashboard/1.0' },
+      });
+      if (!res.ok) continue;
+      const rows = await res.json();
+      if (!Array.isArray(rows)) continue;
+
+      for (const row of rows) {
+        const tokenAddr = row?.baseToken?.address;
+        const priceUsd = Number(row?.priceUsd);
+        if (!tokenAddr || !Number.isFinite(priceUsd) || priceUsd <= 0) continue;
+        const prev = out[tokenAddr];
+        // pick pair with highest liquidity as representative price
+        const liq = Number(row?.liquidity?.usd);
+        const liqScore = Number.isFinite(liq) ? liq : -1;
+        if (!prev || liqScore > prev._liqScore) out[tokenAddr] = { priceUsd, _liqScore: liqScore };
+      }
+    } catch {
+      // best-effort only; dashboard must still render from DB values
+    }
+  }
+
+  for (const k of Object.keys(out)) out[k] = out[k].priceUsd;
+  return out;
+}
+
+async function getOpenRealtimeByMint() {
+  const rows = db.prepare("SELECT mint,size_sol,entry_price,entry_mcap,opened_at_ms,status FROM dry_run_positions").all();
+  const prices = await fetchDexBatchPrices(rows.map((r) => r.mint));
+  const byMint = Object.create(null);
+
+  for (const r of rows) {
+    const mint = String(r.mint || '').trim();
+    if (!mint) continue;
+    const price = Number(prices[mint]);
+    if (!Number.isFinite(price) || price <= 0) continue;
+
+    const entryPrice = Number(r.entry_price);
+    let pnlPct = null;
+    if (Number.isFinite(entryPrice) && entryPrice > 0) pnlPct = ((price - entryPrice) / entryPrice) * 100;
+
+    let estMcap = null;
+    const entryMcap = Number(r.entry_mcap);
+    if (Number.isFinite(entryMcap) && Number.isFinite(entryPrice) && entryPrice > 0) {
+      estMcap = entryMcap * (price / entryPrice);
+    }
+
+    byMint[mint] = {
+      current_price_usd: price,
+      realtime_pnl_percent: pnlPct,
+      est_current_mcap: estMcap,
+      source: 'dexscreener',
+    };
+  }
+
+  return byMint;
 }
 
 function sendJson(res, status, payload, req) {
@@ -181,41 +251,47 @@ function renderShell(title, body) {
     .sub { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
 
 .nav {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 6px;
-      margin-bottom: 16px;
-      padding: 5px;
-      background: linear-gradient(180deg, #0d1527, #0a1222);
-      border: 1px solid #223252;
-      border-radius: 12px;
-      box-shadow: inset 0 1px 0 #33476955;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-bottom: 18px;
+      padding: 4px;
+      background: rgba(15, 23, 42, 0.6);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(96, 165, 250, 0.15);
+      border-radius: 14px;
+      box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 24px rgba(0,0,0,0.35);
     }
     .pill {
       position: relative;
+      flex: 1;
+      min-width: 110px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       gap: 8px;
-      color: #9bb1e6;
+      color: #8aa1d3;
       text-decoration: none;
       font-weight: 600;
       font-size: 13px;
-      letter-spacing: .2px;
-      padding: 9px 12px;
-      border-radius: 9px;
+      letter-spacing: .3px;
+      padding: 11px 16px;
+      border-radius: 10px;
       text-align: center;
       border: 1px solid transparent;
       background: transparent;
-      transition: color .15s ease, background .15s ease, border-color .15s ease;
+      transition: all .18s ease;
     }
     .pill svg { width: 14px; height: 14px; opacity: .85; }
-    .pill:hover { color: #e6efff; background: #15213a66; }
+    .pill:hover {
+      color: #e6efff;
+      background: rgba(96, 165, 250, 0.08);
+    }
     .pill.active {
       color: #ffffff;
-      border-color: #2f4f8c;
-      background: linear-gradient(180deg, #1b3060, #14264c);
-      box-shadow: 0 0 0 1px #4f86ff22, 0 4px 12px #0b122244;
+      background: linear-gradient(180deg, rgba(96,165,250,0.18), rgba(59,130,246,0.12));
+      border-color: rgba(96,165,250,0.3);
+      box-shadow: 0 0 0 1px rgba(96,165,250,0.15) inset, 0 6px 16px rgba(59,130,246,0.18);
     }
     .pill.active svg { opacity: 1; }
 
@@ -429,9 +505,10 @@ function renderShell(title, body) {
     <h1>Charon Dashboard</h1>
     <div class='sub'>Trading-style read-only view focused on PnL and position flow.</div>
     <div class='nav'>
-      <a class='pill ${title === 'Positions' ? 'active' : ''}' href='/positions'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><rect x='3' y='4' width='18' height='16' rx='2'/><line x1='3' y1='10' x2='21' y2='10'/></svg>Positions</a>
-      <a class='pill ${title === 'PnL' ? 'active' : ''}' href='/pnl'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><polyline points='3 17 9 11 13 15 21 7'/><line x1='21' y1='7' x2='21' y2='13'/></svg>PnL</a>
-      <a class='pill ${title === 'Strategy' ? 'active' : ''}' href='/strategy'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><circle cx='12' cy='12' r='3'/><path d='M19.4 15a1.7 1.7 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-.4-1.1 1.7 1.7 0 0 0-1-.6 1.7 1.7 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.1-.4 1.7 1.7 0 0 0 .6-1A1.7 1.7 0 0 0 4.47 6.4l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 .4 1.1 1.7 1.7 0 0 0 1 .6 1.7 1.7 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.26.3.47.65.6 1 .1.32.15.66.15 1s-.05.68-.15 1c-.13.35-.34.7-.6 1z'/></svg>Strategy</a>
+      <a class='pill ${title === 'Positions' ? 'active' : ''}' href='/positions'>Positions</a>
+      <a class='pill ${title === 'Candidates' ? 'active' : ''}' href='/candidates'>Candidates</a>
+      <a class='pill ${title === 'PnL' ? 'active' : ''}' href='/pnl'>PnL</a>
+      <a class='pill ${title === 'Strategy' ? 'active' : ''}' href='/strategy'>Strategy</a>
     </div>
     ${body}
   </div>
@@ -606,6 +683,9 @@ function generateRecommendations(summary, advanced, strategy) {
 function positionsPage() {
   const all = getPositionCardsLite();
 
+  // Default filter: open only
+  const defaultFilter = 'open';
+
   const cards = all.map((p, i) => {
     const isClosed = p.status === 'closed';
     const pnlClass = p.pnl_percent == null ? '' : (Number(p.pnl_percent) >= 0 ? 'up' : 'dn');
@@ -626,7 +706,25 @@ function positionsPage() {
         <div>Entry MCAP: <b>$${fmtNum(p.entry_mcap, 0)}</b></div>
       `;
 
-    return `<div class='pos ${isClosed ? 'pos-closed' : 'pos-open'}' data-id='${esc(p.id)}' data-status='${esc(p.status)}'>
+    const hiddenStyle = '';
+    const sortPnl = (p.pnl_percent == null) ? '' : Number(p.pnl_percent);
+    const sortMcap = isClosed
+      ? (p.exit_mcap == null ? (p.entry_mcap == null ? '' : Number(p.entry_mcap)) : Number(p.exit_mcap))
+      : (p.entry_mcap == null ? '' : Number(p.entry_mcap));
+    const sortOpened = p.opened_at_ms == null ? 0 : Number(p.opened_at_ms);
+    const sortSymbol = (p.symbol || '').toString();
+
+    return `<div class='pos ${isClosed ? 'pos-closed' : 'pos-open'}'
+      data-id='${esc(p.id)}'
+      data-status='${esc(p.status)}'
+      data-entry-price='${esc(p.entry_price ?? '')}'
+      data-entry-mcap='${esc(p.entry_mcap ?? '')}'
+      data-mint='${esc(p.mint ?? '')}'
+      data-sort-pnl='${esc(sortPnl)}'
+      data-sort-mcap='${esc(sortMcap)}'
+      data-sort-opened='${esc(sortOpened)}'
+      data-sort-symbol='${esc(sortSymbol)}'
+      style='${hiddenStyle}'>
       <div class='pos-top'>
         <div class='sym'>${esc(p.symbol || 'Unknown')}</div>
         <span class='badge ${statusClass}'>${esc(String(p.status).toUpperCase())}</span>
@@ -638,18 +736,43 @@ function positionsPage() {
 
   return renderShell('Positions', `
 
-    <div class='toolbar'>
+    <div class='toolbar' style='display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px'>
       <div class='k'>Click a card to open full transaction detail on the right panel.</div>
-      <div class='filters'>
-        <button class='fbtn active' data-filter='all'>All</button>
-        <button class='fbtn' data-filter='open'>Open</button>
-        <button class='fbtn' data-filter='closed'>Closed</button>
+      <div style='display:flex;flex-wrap:wrap;align-items:center;gap:10px'>
+        <div class='filters'>
+          <button class='fbtn ${defaultFilter === 'all' ? 'active' : ''}' data-filter='all'>All</button>
+          <button class='fbtn ${defaultFilter === 'open' ? 'active' : ''}' data-filter='open'>Open</button>
+          <button class='fbtn ${defaultFilter === 'closed' ? 'active' : ''}' data-filter='closed'>Closed</button>
+        </div>
+        <select id='sort-select' style='background:#0f172a;color:#e6edff;border:1px solid #24314d;border-radius:9px;padding:9px 12px'>
+          <option value='opened_desc'>Newest</option>
+          <option value='opened_asc'>Oldest</option>
+          <option value='pnl_desc'>PnL tertinggi</option>
+          <option value='pnl_asc'>PnL terendah</option>
+          <option value='mcap_desc'>MCAP terbesar</option>
+          <option value='mcap_asc'>MCAP terkecil</option>
+          <option value='symbol_asc'>Symbol A-Z</option>
+        </select>
+        <select id='quick-filter' style='background:#0f172a;color:#e6edff;border:1px solid #24314d;border-radius:9px;padding:9px 12px'>
+          <option value='all'>Semua</option>
+          <option value='winners'>PnL positif</option>
+          <option value='losers'>PnL negatif</option>
+          <option value='bigcaps'>MCAP ≥ 100k</option>
+          <option value='smallcaps'>MCAP < 100k</option>
+        </select>
       </div>
     </div>
 
     <div class='layout'>
-      <div class='list' id='pos-list'>
-        ${cards || `<div class='empty'>No positions yet.</div>`}
+      <div>
+        <div class='list' id='pos-list'>
+          ${cards || `<div class='empty'>No positions yet.</div>`}
+        </div>
+        <div id='pager' style='display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px'>
+          <button id='prev-page' class='fbtn'>← Prev</button>
+          <div class='k' id='page-info'>Page 1/1</div>
+          <button id='next-page' class='fbtn'>Next →</button>
+        </div>
       </div>
       <div class='side' id='detail-panel'>
         <h3>Position Detail</h3>
@@ -660,14 +783,87 @@ function positionsPage() {
     <script>
       const panel = document.getElementById('detail-panel');
       const cards = Array.from(document.querySelectorAll('.pos'));
-      const buttons = Array.from(document.querySelectorAll('.fbtn'));
+      const buttons = Array.from(document.querySelectorAll('.fbtn[data-filter]'));
+      const sortSelect = document.getElementById('sort-select');
+      const quickFilter = document.getElementById('quick-filter');
+      const prevBtn = document.getElementById('prev-page');
+      const nextBtn = document.getElementById('next-page');
+      const pageInfo = document.getElementById('page-info');
+      const listEl = document.getElementById('pos-list');
       const TROJAN_BOT = ${JSON.stringify(TROJAN_BOT)};
       const detailCache = new Map();
+      const PAGE_SIZE = 10;
+      let currentPage = 1;
+      let currentFilter = 'open';
+      let currentSort = 'opened_desc';
+      let currentQuick = 'all';
 
       function safe(v){ return (v === null || v === undefined) ? '-' : String(v); }
       function iso(ms){ try { return ms ? new Date(ms).toISOString() : '-' ; } catch { return '-'; } }
       function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
       function showLoading(){ panel.innerHTML = '<h3 style="margin:0 0 10px">Position Detail</h3><div class="k">Loading detail…</div>'; }
+
+      function passQuickFilter(el) {
+        const pnl = Number(el.dataset.sortPnl);
+        const mcap = Number(el.dataset.sortMcap);
+        if (currentQuick === 'winners') return Number.isFinite(pnl) && pnl > 0;
+        if (currentQuick === 'losers') return Number.isFinite(pnl) && pnl < 0;
+        if (currentQuick === 'bigcaps') return Number.isFinite(mcap) && mcap >= 100000;
+        if (currentQuick === 'smallcaps') return Number.isFinite(mcap) && mcap < 100000;
+        return true;
+      }
+
+      function getFilteredCards() {
+        return cards.filter((el) => {
+          if (currentFilter !== 'all' && el.dataset.status !== currentFilter) return false;
+          return passQuickFilter(el);
+        });
+      }
+
+      function sortCards(items) {
+        const arr = items.slice();
+        arr.sort((a, b) => {
+          const num = (v) => Number.isFinite(Number(v)) ? Number(v) : null;
+          if (currentSort === 'symbol_asc') return String(a.dataset.sortSymbol || '').localeCompare(String(b.dataset.sortSymbol || ''));
+          const key = currentSort.startsWith('pnl') ? 'sortPnl' : currentSort.startsWith('mcap') ? 'sortMcap' : 'sortOpened';
+          const va = num(a.dataset[key]);
+          const vb = num(b.dataset[key]);
+          const aa = va == null ? (currentSort.endsWith('_asc') ? Infinity : -Infinity) : va;
+          const bb = vb == null ? (currentSort.endsWith('_asc') ? Infinity : -Infinity) : vb;
+          return currentSort.endsWith('_asc') ? aa - bb : bb - aa;
+        });
+        return arr;
+      }
+
+      function attachCardClicks(scopeCards) {
+        scopeCards.forEach((el) => {
+          el.addEventListener('click', async () => {
+            Array.from(listEl.querySelectorAll('.pos')).forEach((x) => x.classList.remove('active'));
+            el.classList.add('active');
+            const id = el.dataset.id;
+            showLoading();
+            try {
+              const pos = await loadDetail(id);
+              renderDetail(pos || {});
+            } catch {
+              panel.innerHTML = '<h3 style="margin:0 0 10px">Position Detail</h3><div class="k">Failed to load detail.</div>';
+            }
+          });
+        });
+      }
+
+      function renderPage() {
+        const filtered = sortCards(getFilteredCards());
+        const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+        if (currentPage > totalPages) currentPage = totalPages;
+        const start = (currentPage - 1) * PAGE_SIZE;
+        const pageCards = filtered.slice(start, start + PAGE_SIZE);
+        listEl.innerHTML = pageCards.length ? pageCards.map((el) => el.outerHTML).join('') : '<div class="empty">No positions for this filter.</div>';
+        pageInfo.textContent = 'Page ' + currentPage + ' / ' + totalPages + ' · ' + filtered.length + ' item';
+        prevBtn.disabled = currentPage <= 1;
+        nextBtn.disabled = currentPage >= totalPages;
+        attachCardClicks(Array.from(listEl.querySelectorAll('.pos')));
+      }
 
       async function loadDetail(id){
         if (detailCache.has(id)) return detailCache.get(id);
@@ -732,34 +928,81 @@ function positionsPage() {
           + '</div>';
       }
 
-      cards.forEach((el) => {
-        el.addEventListener('click', async () => {
-          cards.forEach((x) => x.classList.remove('active'));
-          el.classList.add('active');
-          const id = el.dataset.id;
-          showLoading();
-          try {
-            const pos = await loadDetail(id);
-            renderDetail(pos || {});
-          } catch {
-            panel.innerHTML = '<h3 style="margin:0 0 10px">Position Detail</h3><div class="k">Failed to load detail.</div>';
-          }
-        });
-      });
-
       buttons.forEach((btn) => {
         btn.addEventListener('click', () => {
           buttons.forEach((b) => b.classList.remove('active'));
           btn.classList.add('active');
-          const f = btn.dataset.filter;
-          cards.forEach((el) => {
-            const ok = f === 'all' || el.dataset.status === f;
-            el.style.display = ok ? '' : 'none';
-          });
+          currentFilter = btn.dataset.filter;
+          currentPage = 1;
+          renderPage();
         });
       });
 
-      requestAnimationFrame(() => { if (cards.length) cards[0].click(); });
+      if (sortSelect) sortSelect.addEventListener('change', () => { currentSort = sortSelect.value; currentPage = 1; renderPage(); });
+      if (quickFilter) quickFilter.addEventListener('change', () => { currentQuick = quickFilter.value; currentPage = 1; renderPage(); });
+      if (prevBtn) prevBtn.addEventListener('click', () => { if (currentPage > 1) { currentPage--; renderPage(); } });
+      if (nextBtn) nextBtn.addEventListener('click', () => { currentPage++; renderPage(); });
+
+      async function refreshRealtimePnL(){
+        try {
+          const res = await fetch('/api/realtime-prices', { cache: 'no-store' });
+          if (!res.ok) return;
+          const payload = await res.json();
+          const byMint = payload && payload.by_mint ? payload.by_mint : {};
+
+          cards.forEach((el) => {
+            const mint = el.dataset.mint || '';
+            const rt = byMint[mint];
+            if (!rt) return;
+
+            const pnl = Number(rt.realtime_pnl_percent);
+            const mcap = Number(rt.est_current_mcap);
+            const isOpen = el.dataset.status === 'open';
+
+            if (isOpen && Number.isFinite(pnl)) {
+              const pnlClass = pnl >= 0 ? 'up' : 'dn';
+              const pnlHtml = '<div>PnL %: <b class="' + pnlClass + '">' + (pnl >= 0 ? '+' : '') + pnl.toFixed(2) + '%</b></div>';
+              const meta = el.querySelector('.meta');
+              if (meta) {
+                const existing = meta.querySelector('[data-rt-pnl]');
+                if (existing) existing.innerHTML = pnlHtml;
+                else {
+                  const wrap = document.createElement('div');
+                  wrap.setAttribute('data-rt-pnl', '1');
+                  wrap.innerHTML = pnlHtml;
+                  meta.appendChild(wrap);
+                }
+              }
+            }
+
+            if (Number.isFinite(mcap)) {
+              const meta = el.querySelector('.meta');
+              if (meta) {
+                const existing = meta.querySelector('[data-rt-mcap]');
+                const mcapText = '<div>Now MCAP: <b>$' + Math.round(mcap).toLocaleString('en-US') + '</b></div>';
+                if (existing) existing.innerHTML = mcapText;
+                else {
+                  const wrap = document.createElement('div');
+                  wrap.setAttribute('data-rt-mcap', '1');
+                  wrap.innerHTML = mcapText;
+                  meta.appendChild(wrap);
+                }
+              }
+            }
+          });
+        } catch {}
+      }
+
+      renderPage();
+      requestAnimationFrame(() => {
+        const first = listEl.querySelector('.pos');
+        if (first) first.click();
+      });
+      refreshRealtimePnL();
+      setInterval(() => {
+        refreshRealtimePnL();
+        renderPage();
+      }, 15000);
     </script>
   `);
 }
@@ -827,6 +1070,151 @@ function strategySummaryRows(c = {}) {
   ];
 }
 
+function getCandidates(limit = 200) {
+  return db.prepare(`
+    SELECT id,mint,status,created_at_ms,updated_at_ms,candidate_json,filter_result_json
+    FROM candidates
+    ORDER BY id DESC
+    LIMIT ?
+  `).all(limit);
+}
+
+function candidatesPage() {
+  const rows = getCandidates(500);
+  const stats = rows.reduce((acc, r) => {
+    acc.total++;
+    acc[r.status] = (acc[r.status] || 0) + 1;
+    return acc;
+  }, { total: 0 });
+
+  const cards = rows.map((r) => {
+    const cj = safeJson(r.candidate_json, {});
+    const fj = safeJson(r.filter_result_json, {});
+    const token = cj.token || {};
+    const metrics = cj.metrics || {};
+    const fails = Array.isArray(fj.failures) ? fj.failures : [];
+    const sym = token.symbol || token.name || 'Unknown';
+    const mcap = metrics.marketCapUsd ?? metrics.market_cap;
+    const vol = metrics.trendingVolumeUsd ?? metrics.volumeUsd;
+    const swaps = metrics.trendingSwaps ?? metrics.swaps;
+
+    return `<div class='pos ${r.status === 'accepted' ? 'pos-open' : 'pos-closed'}' data-status='${esc(r.status)}'
+      data-sort-created='${esc(r.created_at_ms || 0)}'
+      data-sort-mcap='${esc(mcap == null ? '' : Number(mcap))}'
+      data-sort-vol='${esc(vol == null ? '' : Number(vol))}'
+      data-sort-swaps='${esc(swaps == null ? '' : Number(swaps))}'
+      data-sort-symbol='${esc(sym)}'>
+      <div class='pos-top'>
+        <div class='sym'>${esc(sym)} <span class='k'>#${esc(r.id)}</span></div>
+        <span class='badge ${r.status === 'accepted' ? 'b-open' : 'b-closed'}'>${esc((r.status || 'new').toUpperCase())}</span>
+      </div>
+      <div class='meta'>
+        <div>Mint: <b><code>${esc(String(r.mint || '').slice(0, 8))}...${esc(String(r.mint || '').slice(-4))}</code></b></div>
+        <div>Created: <b>${esc(fmtAgeSince(r.created_at_ms))} ago</b></div>
+        <div>MCAP: <b>$${fmtNum(mcap, 0)}</b></div>
+        <div>Volume: <b>$${fmtNum(vol, 0)}</b></div>
+        <div>Swaps: <b>${fmtNum(swaps, 0)}</b></div>
+        <div>Failures: <b>${fails.length}</b>${fails.length ? ' · ' + esc(fails.slice(0,2).join(' | ')) : ''}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  return renderShell('Candidates', `
+    <div class='summary'>
+      <div class='tile'><div class='k'>Rows loaded</div><div class='v'>${stats.total || 0}</div></div>
+      <div class='tile'><div class='k'>Filtered</div><div class='v dn'>${stats.filtered || 0}</div></div>
+      <div class='tile'><div class='k'>Accepted</div><div class='v up'>${stats.accepted || 0}</div></div>
+      <div class='tile'><div class='k'>Watch</div><div class='v'>${stats.watch || 0}</div></div>
+    </div>
+
+    <div class='toolbar' style='display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px'>
+      <div class='k'>Latest 500 candidates · 20 per page</div>
+      <div style='display:flex;flex-wrap:wrap;align-items:center;gap:10px'>
+        <div class='filters'>
+          <button class='fbtn active' data-cf='all'>All</button>
+          <button class='fbtn' data-cf='accepted'>Accepted</button>
+          <button class='fbtn' data-cf='filtered'>Filtered</button>
+          <button class='fbtn' data-cf='watch'>Watch</button>
+        </div>
+        <select id='c-sort' style='background:#0f172a;color:#e6edff;border:1px solid #24314d;border-radius:9px;padding:9px 12px'>
+          <option value='created_desc'>Newest</option>
+          <option value='created_asc'>Oldest</option>
+          <option value='mcap_desc'>MCAP terbesar</option>
+          <option value='mcap_asc'>MCAP terkecil</option>
+          <option value='vol_desc'>Volume terbesar</option>
+          <option value='swaps_desc'>Swap terbanyak</option>
+          <option value='symbol_asc'>Symbol A-Z</option>
+        </select>
+      </div>
+    </div>
+
+    <div class='list' id='c-list'>${cards || `<div class='empty'>No candidates yet.</div>`}</div>
+    <div id='c-pager' style='display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px'>
+      <button id='c-prev' class='fbtn'>← Prev</button>
+      <div class='k' id='c-pageinfo'>Page 1/1</div>
+      <button id='c-next' class='fbtn'>Next →</button>
+    </div>
+
+    <script>
+      const cAll = Array.from(document.querySelectorAll('#c-list .pos'));
+      const cListEl = document.getElementById('c-list');
+      const cFilters = Array.from(document.querySelectorAll('.fbtn[data-cf]'));
+      const cSort = document.getElementById('c-sort');
+      const cPrev = document.getElementById('c-prev');
+      const cNext = document.getElementById('c-next');
+      const cInfo = document.getElementById('c-pageinfo');
+      const C_PAGE_SIZE = 20;
+      let cPage = 1;
+      let cFilter = 'all';
+      let cSortKey = 'created_desc';
+
+      function cFiltered() {
+        return cAll.filter((el) => cFilter === 'all' || el.dataset.status === cFilter);
+      }
+
+      function cSorted(items) {
+        const arr = items.slice();
+        arr.sort((a, b) => {
+          if (cSortKey === 'symbol_asc') return String(a.dataset.sortSymbol || '').localeCompare(String(b.dataset.sortSymbol || ''));
+          const map = { created_desc: 'sortCreated', created_asc: 'sortCreated', mcap_desc: 'sortMcap', mcap_asc: 'sortMcap', vol_desc: 'sortVol', swaps_desc: 'sortSwaps' };
+          const key = map[cSortKey] || 'sortCreated';
+          const va = Number(a.dataset[key]);
+          const vb = Number(b.dataset[key]);
+          const aa = Number.isFinite(va) ? va : (cSortKey.endsWith('_asc') ? Infinity : -Infinity);
+          const bb = Number.isFinite(vb) ? vb : (cSortKey.endsWith('_asc') ? Infinity : -Infinity);
+          return cSortKey.endsWith('_asc') ? aa - bb : bb - aa;
+        });
+        return arr;
+      }
+
+      function cRender() {
+        const items = cSorted(cFiltered());
+        const totalPages = Math.max(1, Math.ceil(items.length / C_PAGE_SIZE));
+        if (cPage > totalPages) cPage = totalPages;
+        const start = (cPage - 1) * C_PAGE_SIZE;
+        const slice = items.slice(start, start + C_PAGE_SIZE);
+        cListEl.innerHTML = slice.length ? slice.map((el) => el.outerHTML).join('') : '<div class="empty">No candidates for this filter.</div>';
+        cInfo.textContent = 'Page ' + cPage + ' / ' + totalPages + ' · ' + items.length + ' item';
+        cPrev.disabled = cPage <= 1;
+        cNext.disabled = cPage >= totalPages;
+      }
+
+      cFilters.forEach((b) => b.addEventListener('click', () => {
+        cFilters.forEach((x) => x.classList.remove('active'));
+        b.classList.add('active');
+        cFilter = b.dataset.cf;
+        cPage = 1;
+        cRender();
+      }));
+      if (cSort) cSort.addEventListener('change', () => { cSortKey = cSort.value; cPage = 1; cRender(); });
+      if (cPrev) cPrev.addEventListener('click', () => { if (cPage > 1) { cPage--; cRender(); } });
+      if (cNext) cNext.addEventListener('click', () => { cPage++; cRender(); });
+
+      cRender();
+    </script>
+  `);
+}
+
 function strategyPage() {
   const s = getEnabledStrategy();
   const rows = strategySummaryRows(s?.config || {});
@@ -841,7 +1229,7 @@ function strategyPage() {
   `);
 }
 
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
   try {
     const u = new URL(req.url, `http://${HOST}:${PORT}`);
 
@@ -853,8 +1241,14 @@ const server = http.createServer((req, res) => {
       return sendJson(res, 200, row, req);
     }
 
+    if (u.pathname === '/api/realtime-prices') {
+      const byMint = await getOpenRealtimeByMint();
+      return sendJson(res, 200, { by_mint: byMint }, req);
+    }
+
     if (u.pathname === '/pnl') return sendHtml(res, 200, pnlPage(), req);
     if (u.pathname === '/strategy') return sendHtml(res, 200, strategyPage(), req);
+    if (u.pathname === '/candidates') return sendHtml(res, 200, candidatesPage(), req);
     if (u.pathname === '/' || u.pathname === '/positions') return sendHtml(res, 200, positionsPage(), req);
 
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
