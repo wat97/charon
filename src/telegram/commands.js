@@ -30,6 +30,7 @@ import { consumeNumericFilterInput } from './input.js';
 import { runLearning, sendLessons } from '../learning/commands.js';
 import { fetchWalletPnl } from '../enrichment/wallets.js';
 import { getPnlSummary as analyticsPnlSummary, getClosedSeries as analyticsClosedSeries, computeAdvancedStats as analyticsAdvancedStats, generateRecommendations as analyticsRecommendations } from '../analytics/pnlSummary.js';
+import { fetchStochRSI } from '../analytics/stochasticRsi.js';
 
 export async function handleMessage(msg) {
   const text = (msg.text || '').trim();
@@ -75,6 +76,13 @@ export async function handleMessage(msg) {
     }
     updateStrategyConfig(id, newConfig);
     return bot.sendMessage(chatId, `Updated ${id}.${key} = ${value}\n\n${strategyMenuText()}`, { parse_mode: 'HTML' });
+  }
+  if (text.startsWith('/stochrsi')) {
+    const parts = text.split(/\s+/);
+    const mint = parts[1];
+    const resolution = parts[2] || '15m';
+    if (!mint) return bot.sendMessage(chatId, 'Usage: /stochrsi <mint> [resolution=15m]\n\nResolutions: 1m, 5m, 15m, 1h, 4h, 1d');
+    return sendStochRsi(chatId, mint, resolution);
   }
   if (text.startsWith('/pnlsummary')) return sendPnlSummary(chatId);
   if (text.startsWith('/pnl')) return sendPnl(chatId);
@@ -247,6 +255,7 @@ export function setupTelegram() {
     { command: 'candidate', description: 'Show candidate by mint' },
     { command: 'filters', description: 'Show filters' },
     { command: 'pnlsummary', description: 'Show PnL summary with insights' },
+    { command: 'stochrsi', description: 'Show Stochastic RSI for token' },
     { command: 'pnl', description: 'Show saved-wallet PnL' },
     { command: 'learn', description: 'Run manual learning report' },
     { command: 'lessons', description: 'Show active screening lessons' },
@@ -294,7 +303,36 @@ async function sendPnl(chatId, query = null) {
   return query ? editMenuMessage(query, text, navKeyboard()) : bot.sendMessage(chatId, text, { parse_mode: 'HTML' });
 }
 
-export async function sendPnlSummary(chatId, query = null) {
+export async function sendStochRsi(chatId, mint, resolution = '15m') {
+  await bot.sendMessage(chatId, `📊 Fetching Stochastic RSI for <code>${escapeHtml(mint.slice(0, 8))}...</code> (${escapeHtml(resolution)})`, { parse_mode: 'HTML' });
+  const data = await fetchStochRSI(mint, { resolution }).catch(() => null);
+  if (!data) {
+    return bot.sendMessage(chatId, `❌ Failed to fetch kline for <code>${escapeHtml(mint.slice(0, 8))}...</code>. Token might be too new or GMGN rate-limited.`, { parse_mode: 'HTML' });
+  }
+
+  const signal = data.isOversold ? '🟢 OVERSOLD (potential buy)'
+    : data.isOverbought ? '🔴 OVERBOUGHT (potential sell)'
+    : data.isBullishCross ? '🟢 BULLISH CROSS'
+    : data.isBearishCross ? '🔴 BEARISH CROSS'
+    : '⚪ NEUTRAL';
+
+  const lines = [
+    '📊 <b>Stochastic RSI</b>',
+    `Token: <code>${escapeHtml(mint)}</code>`,
+    `Timeframe: <b>${escapeHtml(resolution)}</b>`,
+    '',
+    `Last close: <b>$${data.lastClose.toFixed(8)}</b>`,
+    `RSI(14): <b>${data.lastRSI.toFixed(2)}</b>`,
+    `StochRSI %K: <b>${data.lastStochK.toFixed(2)}</b>`,
+    `StochRSI %D: <b>${data.lastStochD.toFixed(2)}</b>`,
+    '',
+    `Signal: <b>${signal}</b>`,
+  ];
+
+  return bot.sendMessage(chatId, lines.join('\n'), { parse_mode: 'HTML' });
+}
+
+async function sendPnlSummary(chatId, query = null) {
   const summary = analyticsPnlSummary();
   const history = analyticsClosedSeries();
   const advanced = analyticsAdvancedStats(history, summary);

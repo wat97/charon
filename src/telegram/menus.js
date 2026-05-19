@@ -22,6 +22,7 @@ export function menuKeyboard() {
         ],
         [
           { text: 'PnL Summary', callback_data: 'menu:pnlsummary' },
+          { text: 'Stoch RSI', callback_data: 'menu:stochrsi' },
         ],
       ],
     },

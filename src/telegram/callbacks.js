@@ -61,6 +61,23 @@ export async function handleCallback(query) {
     const { sendPnlSummary } = await import('./commands.js');
     return sendPnlSummary(chatId, query);
   }
+  if (data === 'menu:stochrsi') {
+    const text = [
+      '📊 <b>Stochastic RSI</b>',
+      '',
+      'Usage:',
+      '<code>/stochrsi &lt;mint&gt; [resolution]</code>',
+      '',
+      'Resolutions: <b>1m, 5m, 15m, 1h, 4h, 1d</b>',
+      'Default: <b>15m</b>',
+      '',
+      'Example:',
+      '<code>/stochrsi So11111111111111111111111111111111111111112 15m</code>',
+      '',
+      'Sumber data: <b>GMGN kline</b>',
+    ].join('\n');
+    return editMenuMessage(query, text, navKeyboard());
+  }
   if (data === 'menu:settings') return editMenuMessage(query, `${agentText()}\n\n${filtersText()}`, navKeyboard([
     [
       { text: 'Agent', callback_data: 'menu:agent' },

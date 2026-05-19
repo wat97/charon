@@ -168,6 +168,35 @@ async function fetchGmgnTokenInfo(mint, useCache = true) {
   }
 }
 
+async function fetchGmgnKline(mint, { resolution = '15m', limit = 200 } = {}) {
+  if (!GMGN_ENABLED) return null;
+  if (gmgnBackoffActive('token')) return null;
+  try {
+    const to = Math.floor(now() / 1000);
+    const stepSeconds = (() => {
+      const map = { '1m': 60, '5m': 300, '15m': 900, '1h': 3600, '4h': 14400, '1d': 86400 };
+      return map[resolution] || 900;
+    })();
+    const from = to - stepSeconds * Math.max(50, limit);
+    const payload = await gmgnFetch('/v1/token/kline/sol', {
+      params: { token_address: mint, resolution, from, to },
+    });
+    const candles = payload?.data?.data || payload?.data || payload;
+    if (!Array.isArray(candles)) return null;
+    return candles.map((c) => ({
+      time: Number(c.time || c.t || c[0]) || 0,
+      open: Number(c.open || c.o || c[1]) || 0,
+      high: Number(c.high || c.h || c[2]) || 0,
+      low: Number(c.low || c.l || c[3]) || 0,
+      close: Number(c.close || c.c || c[4]) || 0,
+      volume: Number(c.volume || c.v || c[5]) || 0,
+    })).filter(c => c.close > 0);
+  } catch (err) {
+    setGmgnBackoff('token', err);
+    return null;
+  }
+}
+
 function normalizedTrendingRows(payload) {
   const rows = payload?.data?.data?.rank
     || payload?.data?.rank
@@ -181,6 +210,7 @@ function normalizedTrendingRows(payload) {
 export {
   gmgnFetch,
   fetchGmgnTokenInfo,
+  fetchGmgnKline,
   gmgnBackoffActive,
   setGmgnBackoff,
   gmgnStatusText,
