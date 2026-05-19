@@ -783,7 +783,7 @@ function positionsPage() {
 
     <script>
       const panel = document.getElementById('detail-panel');
-      const cards = Array.from(document.querySelectorAll('.pos'));
+      let cards = Array.from(document.querySelectorAll('.pos'));
       const buttons = Array.from(document.querySelectorAll('.fbtn[data-filter]'));
       const sortSelect = document.getElementById('sort-select');
       const quickFilter = document.getElementById('quick-filter');
@@ -803,6 +803,85 @@ function positionsPage() {
       function iso(ms){ try { return ms ? new Date(ms).toISOString() : '-' ; } catch { return '-'; } }
       function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
       function showLoading(){ panel.innerHTML = '<h3 style="margin:0 0 10px">Position Detail</h3><div class="k">Loading detail…</div>'; }
+
+      function fmtNumJs(n, d = 2) {
+        if (n === null || n === undefined || Number.isNaN(Number(n))) return '-';
+        return Number(n).toLocaleString('en-US', { maximumFractionDigits: d });
+      }
+
+      function fmtPctJs(n) {
+        if (n === null || n === undefined || Number.isNaN(Number(n))) return '-';
+        const v = Number(n);
+        return (v > 0 ? '+' : '') + v.toFixed(2) + '%';
+      }
+
+      function fmtAgeSinceJs(ms) {
+        if (!ms) return '-';
+        const diff = Math.max(0, Date.now() - Number(ms));
+        const m = Math.floor(diff / 60000);
+        if (m < 60) return m + 'm';
+        const h = Math.floor(m / 60);
+        if (h < 24) return h + 'h ' + (m % 60) + 'm';
+        return Math.floor(h / 24) + 'd ' + (h % 24) + 'h';
+      }
+
+      function buildCardHtml(p) {
+        const isClosed = p.status === 'closed';
+        const pnlClass = p.pnl_percent == null ? '' : (Number(p.pnl_percent) >= 0 ? 'up' : 'dn');
+        const statusClass = p.status === 'open' ? 'b-open' : 'b-closed';
+        const compactMeta = isClosed
+          ? "<div>Size: <b>" + fmtNumJs(p.size_sol, 4) + " SOL</b></div>"
+            + "<div>Age: <b>" + escHtml(fmtAgeSinceJs(p.opened_at_ms)) + "</b></div>"
+            + "<div>Entry MCAP: <b>$" + fmtNumJs(p.entry_mcap, 0) + "</b></div>"
+            + "<div>Exit MCAP: <b>$" + fmtNumJs(p.exit_mcap, 0) + "</b></div>"
+            + "<div>PnL %: <b class='" + pnlClass + "'>" + fmtPctJs(p.pnl_percent) + "</b></div>"
+          : "<div>Size: <b>" + fmtNumJs(p.size_sol, 4) + " SOL</b></div>"
+            + "<div>Age: <b>" + escHtml(fmtAgeSinceJs(p.opened_at_ms)) + "</b></div>"
+            + "<div>Entry MCAP: <b>$" + fmtNumJs(p.entry_mcap, 0) + "</b></div>";
+
+        const sortPnl = (p.pnl_percent == null) ? '' : Number(p.pnl_percent);
+        const sortMcap = isClosed ? (p.exit_mcap == null ? (p.entry_mcap == null ? '' : Number(p.entry_mcap)) : Number(p.exit_mcap)) : (p.entry_mcap == null ? '' : Number(p.entry_mcap));
+        const sortOpened = p.opened_at_ms == null ? 0 : Number(p.opened_at_ms);
+        const sortSymbol = (p.symbol || '').toString();
+
+        return "<div class='pos " + (isClosed ? 'pos-closed' : 'pos-open') + "'"
+          + " data-id='" + escHtml(p.id) + "'"
+          + " data-status='" + escHtml(p.status) + "'"
+          + " data-entry-price='" + escHtml(p.entry_price ?? '') + "'"
+          + " data-entry-mcap='" + escHtml(p.entry_mcap ?? '') + "'"
+          + " data-mint='" + escHtml(p.mint ?? '') + "'"
+          + " data-sort-pnl='" + escHtml(sortPnl) + "'"
+          + " data-sort-mcap='" + escHtml(sortMcap) + "'"
+          + " data-sort-opened='" + escHtml(sortOpened) + "'"
+          + " data-sort-symbol='" + escHtml(sortSymbol) + "'>"
+          + "<div class='pos-top'><div class='sym'>" + escHtml(p.symbol || 'Unknown') + "</div><span class='badge " + statusClass + "'>" + escHtml(String(p.status).toUpperCase()) + "</span></div>"
+          + (isClosed ? "<div class='pnl-big " + pnlClass + "'>" + escHtml(fmtPctJs(p.pnl_percent)) + "</div>" : '')
+          + "<div class='meta'>" + compactMeta + "</div>"
+          + "</div>";
+      }
+
+      function applyPositionSnapshot(payload) {
+        if (!payload || !Array.isArray(payload.rows)) return;
+        cards = payload.rows.map((p) => {
+          const wrap = document.createElement('div');
+          wrap.innerHTML = buildCardHtml(p);
+          return wrap.firstElementChild;
+        }).filter(Boolean);
+        currentPage = 1;
+        renderPage();
+      }
+
+      function applyPositionUpdate(payload) {
+        if (!payload || !Array.isArray(payload.rows)) return;
+        cards = payload.rows.map((p) => {
+          const wrap = document.createElement('div');
+          wrap.innerHTML = buildCardHtml(p);
+          return wrap.firstElementChild;
+        }).filter(Boolean);
+        renderPage();
+      }
+
+      function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#39;'); }
 
       function passQuickFilter(el) {
         const pnl = Number(el.dataset.sortPnl);
@@ -1013,6 +1092,12 @@ function positionsPage() {
                 applyRealtimePayload(msg.payload || {});
                 renderPage();
               }
+              if (msg.type === 'position_snapshot') {
+                applyPositionSnapshot(msg.payload || {});
+              }
+              if (msg.type === 'position_update') {
+                applyPositionUpdate(msg.payload || {});
+              }
             } catch {}
           };
 
@@ -1112,7 +1197,7 @@ function getCandidates(limit = 200) {
 }
 
 function getPositionsWsSnapshot() {
-  const rows = db.prepare(`SELECT id,status,symbol,mint,pnl_percent,updated_at_ms,opened_at_ms FROM dry_run_positions ORDER BY id DESC LIMIT 200`).all();
+  const rows = getPositionCardsLite();
   const openCount = rows.filter(r => r.status === 'open').length;
   const closedCount = rows.filter(r => r.status === 'closed').length;
   return { open_count: openCount, closed_count: closedCount, total: rows.length, rows };
