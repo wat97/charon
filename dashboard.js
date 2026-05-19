@@ -518,30 +518,86 @@ function renderShell(title, body) {
 </html>`;
 }
 
-function buildEquityCurveSvg(history) {
+function buildEquityCurveSvg(history, summary) {
   if (history.length < 2) return `<div class='k'>Not enough closed trades yet.</div>`;
-  const w = 900, h = 160, pad = 22;
+  const w = 900, h = 240, padL = 42, padR = 18, padT = 16, padB = 32;
   let cum = 0;
-  const series = history.map((x) => {
+  const series = history.map((x, i) => {
     cum += Number(x.pnl_sol || 0);
-    return { t: x.closed_at_ms, v: cum };
+    return { i, t: x.closed_at_ms, v: cum, trade: Number(x.pnl_sol || 0) };
   });
   const max = Math.max(...series.map((s) => s.v), 0.0001);
   const min = Math.min(...series.map((s) => s.v), -0.0001);
-  const range = Math.max(Math.abs(max), Math.abs(min), 0.05);
-  const points = series.map((s, i) => {
-    const x = pad + (i / (series.length - 1)) * (w - pad * 2);
-    const y = h / 2 - (s.v / range) * ((h - pad * 2) / 2);
-    return `${x},${y}`;
+  const range = Math.max(max - min, 0.05);
+  const yFor = (v) => padT + ((max - v) / range) * (h - padT - padB);
+  const xFor = (i) => padL + (i / Math.max(1, series.length - 1)) * (w - padL - padR);
+  const points = series.map((s) => ({ ...s, x: xFor(s.i), y: yFor(s.v) }));
+  const zero = yFor(0);
+  let peakIdx = 0; let troughIdx = 0; let peakVal = points[0].v; let worstDd = 0;
+  points.forEach((p, idx) => {
+    if (p.v > peakVal) { peakVal = p.v; peakIdx = idx; }
+    const dd = peakVal - p.v;
+    if (dd > worstDd) { worstDd = dd; troughIdx = idx; }
   });
-  const path = points.join(' ');
-  const zero = h / 2;
-  return `<svg viewBox='0 0 ${w} ${h}' preserveAspectRatio='none'>
-    <line x1='${pad}' y1='${zero}' x2='${w - pad}' y2='${zero}' stroke='#334155' stroke-dasharray='4 4'/>
-    <line x1='${pad}' y1='${pad}' x2='${pad}' y2='${h - pad}' stroke='#24314d'/>
-    <path d='M${path}' fill='none' stroke='#60a5fa' stroke-width='2.5' />
-    ${points.map((p) => { const [cx, cy] = p.split(','); return `<circle cx='${cx}' cy='${cy}' r='3.5' fill='#60a5fa' stroke='#0b1020' stroke-width='2'/>`; }).join('')}
-  </svg>`;
+  const last = points[points.length - 1];
+  const first = points[0];
+  const netChange = last.v - first.v;
+  const netClass = netChange >= 0 ? 'up' : 'dn';
+
+  const gridLines = [];
+  const yTicks = 4;
+  for (let i = 0; i <= yTicks; i++) {
+    const value = min + (range * (yTicks - i) / yTicks);
+    const y = yFor(value);
+    gridLines.push(`<line x1='${padL}' y1='${y}' x2='${w - padR}' y2='${y}' stroke='${Math.abs(value) < 1e-9 ? '#334155' : '#1e293b'}' stroke-width='1' ${Math.abs(value) < 1e-9 ? "stroke-dasharray='4 4'" : ''}/>`);
+    gridLines.push(`<text x='${padL - 8}' y='${y + 3}' fill='#64748b' font-size='10' text-anchor='end'>${value.toFixed(3)}</text>`);
+  }
+  const xLabels = [0, Math.floor((points.length - 1) / 2), points.length - 1].filter((v, i, a) => a.indexOf(v) === i)
+    .map((idx, i) => `<text x='${points[idx].x}' y='${h - 8}' fill='#64748b' font-size='10' text-anchor='${i===0?'start':(i===2?'end':'middle')}'>${new Date(points[idx].t).toLocaleDateString('id-ID', { month: 'short', day: 'numeric' })}</text>`).join('');
+
+  const areaPath = `M${points.map(p => `${p.x},${p.y}`).join(' L ')} L ${last.x},${h-padB} L ${first.x},${h-padB} Z`;
+  const linePath = `M${points.map(p => `${p.x},${p.y}`).join(' L ')}`;
+  const pointNodes = points.map((p, idx) => {
+    const isLast = idx === points.length - 1;
+    const fill = isLast ? '#22c55e' : '#60a5fa';
+    const r = isLast ? 4.8 : 3.4;
+    const date = new Date(p.t).toLocaleString('id-ID', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return `<g class='eq-pt'><circle cx='${p.x}' cy='${p.y}' r='${r}' fill='${fill}' stroke='#0b1020' stroke-width='2'/><title>${date}\nCumulative: ${p.v.toFixed(4)} SOL\nTrade: ${p.trade >= 0 ? '+' : ''}${p.trade.toFixed(4)} SOL</title></g>`;
+  }).join('');
+  const peakPoint = points[peakIdx];
+  const troughPoint = points[troughIdx];
+
+  return `
+    <div class='chart-header' style='display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap'>
+      <div>
+        <div style='color:#cbd5e1;font-size:14px;font-weight:600'>Equity Curve (cumulative SOL)</div>
+        <div style='color:#94a5d4;font-size:12px'>Baseline dashed line = break-even (0 SOL)</div>
+      </div>
+      <div style='display:flex;gap:14px;font-size:12px;flex-wrap:wrap'>
+        <div>Start: <b>${first.v.toFixed(4)} SOL</b></div>
+        <div>Current: <b class='${netClass}'>${last.v.toFixed(4)} SOL</b></div>
+        <div>Net: <b class='${netClass}'>${netChange >= 0 ? '+' : ''}${netChange.toFixed(4)} SOL</b></div>
+      </div>
+    </div>
+    <svg viewBox='0 0 ${w} ${h}' preserveAspectRatio='none' style='width:100%;height:240px'>
+      <defs><linearGradient id='eqFill' x1='0' x2='0' y1='0' y2='1'><stop offset='0%' stop-color='#60a5fa' stop-opacity='0.26'/><stop offset='100%' stop-color='#60a5fa' stop-opacity='0.03'/></linearGradient></defs>
+      ${gridLines.join('')}
+      <line x1='${padL}' y1='${padT}' x2='${padL}' y2='${h - padB}' stroke='#24314d'/>
+      <line x1='${padL}' y1='${h - padB}' x2='${w - padR}' y2='${h - padB}' stroke='#24314d'/>
+      <path d='${areaPath}' fill='url(#eqFill)'/>
+      <path d='${linePath}' fill='none' stroke='#60a5fa' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/>
+      <line x1='${peakPoint.x}' y1='${peakPoint.y}' x2='${troughPoint.x}' y2='${troughPoint.y}' stroke='#ef4444' stroke-dasharray='3 3' opacity='0.7'/>
+      <text x='${troughPoint.x + 8}' y='${troughPoint.y - 6}' fill='#fca5a5' font-size='10'>Max DD ${(worstDd).toFixed(4)} SOL</text>
+      <text x='${peakPoint.x + 8}' y='${peakPoint.y - 6}' fill='#93c5fd' font-size='10'>Peak</text>
+      ${pointNodes}
+      ${xLabels}
+    </svg>
+    <div style='display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;color:#94a5d4;font-size:12px'>
+      <div><span style='display:inline-block;width:10px;height:10px;border-radius:50%;background:#22c55e;margin-right:6px'></span>Current point</div>
+      <div><span style='display:inline-block;width:10px;height:2px;background:#60a5fa;margin-right:6px;vertical-align:middle'></span>Equity line</div>
+      <div><span style='display:inline-block;width:10px;height:2px;background:#ef4444;margin-right:6px;vertical-align:middle'></span>Max drawdown span</div>
+    </div>
+  `;
 }
 
 function buildHistogramSvg(history) {
@@ -558,23 +614,52 @@ function buildHistogramSvg(history) {
     const v = Number(h.pnl_percent || 0);
     for (const b of buckets) { if (v >= b.min && v < b.max) { b.n += 1; break; } }
   });
-  const w = 600, h = 160, pad = 24;
+  const total = history.length;
+  const w = 600, h = 200, padL = 36, padR = 14, padT = 14, padB = 28;
   const maxN = Math.max(...buckets.map((b) => b.n), 1);
-  const colW = (w - pad * 2) / buckets.length;
-  return `<svg viewBox='0 0 ${w} ${h}' preserveAspectRatio='none'>
-    ${buckets.map((b, i) => {
-      const x = pad + i * colW + 4;
-      const bw = colW - 8;
-      const bh = ((h - pad * 2) * b.n) / maxN;
-      const y = h - pad - bh;
-      return `<g>
-        <rect x='${x}' y='${y}' width='${bw}' height='${bh}' fill='${b.color}' rx='4'/>
-        <text x='${x + bw / 2}' y='${h - 6}' fill='#94a5d4' font-size='10' text-anchor='middle'>${b.label}</text>
-        <text x='${x + bw / 2}' y='${y - 4}' fill='#dbe7ff' font-size='10' text-anchor='middle'>${b.n}</text>
-      </g>`;
-    }).join('')}
-    <line x1='${pad}' y1='${h - pad}' x2='${w - pad}' y2='${h - pad}' stroke='#24314d'/>
-  </svg>`;
+  const colW = (w - padL - padR) / buckets.length;
+  const yTicks = 4;
+  const yLines = [];
+  for (let i = 0; i <= yTicks; i++) {
+    const value = Math.round((maxN * i) / yTicks);
+    const y = h - padB - ((h - padT - padB) * i) / yTicks;
+    yLines.push(`<line x1='${padL}' y1='${y}' x2='${w - padR}' y2='${y}' stroke='#1e293b'/>`);
+    yLines.push(`<text x='${padL - 6}' y='${y + 3}' fill='#64748b' font-size='10' text-anchor='end'>${value}</text>`);
+  }
+  const winners = total ? buckets.slice(3).reduce((a, b) => a + b.n, 0) : 0;
+  const losers = total ? buckets.slice(0, 3).reduce((a, b) => a + b.n, 0) : 0;
+  const maxIdx = buckets.reduce((mi, b, i) => b.n > buckets[mi].n ? i : mi, 0);
+  return `
+    <div class='chart-header' style='display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap'>
+      <div>
+        <div style='color:#cbd5e1;font-size:14px;font-weight:600'>PnL Distribution (per trade)</div>
+        <div style='color:#94a5d4;font-size:12px'>Buckets by % return · totals reported above each bar</div>
+      </div>
+      <div style='display:flex;gap:14px;font-size:12px;flex-wrap:wrap'>
+        <div>Trades: <b>${total}</b></div>
+        <div>Winners: <b class='up'>${winners}</b></div>
+        <div>Losers: <b class='dn'>${losers}</b></div>
+      </div>
+    </div>
+    <svg viewBox='0 0 ${w} ${h}' preserveAspectRatio='none' style='width:100%;height:200px'>
+      ${yLines.join('')}
+      <line x1='${padL}' y1='${padT}' x2='${padL}' y2='${h - padB}' stroke='#24314d'/>
+      <line x1='${padL}' y1='${h - padB}' x2='${w - padR}' y2='${h - padB}' stroke='#24314d'/>
+      ${buckets.map((b, i) => {
+        const x = padL + i * colW + 6;
+        const bw = colW - 12;
+        const bh = ((h - padT - padB) * b.n) / maxN;
+        const y = h - padB - bh;
+        const stroke = i === maxIdx ? `<rect x='${x - 1.5}' y='${y - 1.5}' width='${bw + 3}' height='${bh + 3}' fill='none' stroke='#facc15' rx='5'/>` : '';
+        return `<g><title>${b.label}\n${b.n} trades\n${total ? ((b.n / total) * 100).toFixed(1) + '%' : '0%'}</title>
+          ${stroke}
+          <rect x='${x}' y='${y}' width='${bw}' height='${bh}' fill='${b.color}' rx='4'/>
+          <text x='${x + bw / 2}' y='${h - 8}' fill='#94a5d4' font-size='10' text-anchor='middle'>${b.label}</text>
+          <text x='${x + bw / 2}' y='${y - 4}' fill='#dbe7ff' font-size='10' text-anchor='middle' font-weight='600'>${b.n}</text>
+        </g>`;
+      }).join('')}
+    </svg>
+  `;
 }
 
 function computeAdvancedStats(history, summary) {
@@ -1118,31 +1203,70 @@ function positionsPage() {
   `);
 }
 
-function pnlPage() {
+function filterHistoryByRange(history, range = 'all') {
+  if (!Array.isArray(history) || !history.length) return [];
+  if (!range || range === 'all') return history;
+  const days = Number(String(range).replace(/d$/i, ''));
+  if (!Number.isFinite(days) || days <= 0) return history;
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  return history.filter((h) => Number(h.closed_at_ms || 0) >= cutoff);
+}
+
+function summarizeFromHistory(history) {
+  const total = history.length;
+  const wins = history.filter((h) => Number(h.pnl_percent) >= 0).length;
+  const losses = total - wins;
+  const totalPnlPercent = history.reduce((a, h) => a + (Number(h.pnl_percent) || 0), 0);
+  const totalPnlSol = history.reduce((a, h) => a + (Number(h.pnl_sol) || 0), 0);
+  const vals = history.map((h) => Number(h.pnl_percent) || 0);
+  const avgPnlPercent = total ? totalPnlPercent / total : 0;
+  const maxPnlPercent = vals.length ? Math.max(...vals) : 0;
+  const minPnlPercent = vals.length ? Math.min(...vals) : 0;
+  const grossProfitSol = history.reduce((a, h) => a + Math.max(0, Number(h.pnl_sol) || 0), 0);
+  const grossLossSol = history.reduce((a, h) => a + Math.min(0, Number(h.pnl_sol) || 0), 0);
+  const winVals = history.filter((h) => Number(h.pnl_percent) >= 0).map((h) => Number(h.pnl_percent) || 0);
+  const lossVals = history.filter((h) => Number(h.pnl_percent) < 0).map((h) => Number(h.pnl_percent) || 0);
+  const avgWinPct = winVals.length ? winVals.reduce((a, b) => a + b, 0) / winVals.length : 0;
+  const avgLossPct = lossVals.length ? lossVals.reduce((a, b) => a + b, 0) / lossVals.length : 0;
+  const hold = history.map((h) => Number(h.closed_at_ms||0)-Number(h.opened_at_ms||0)).filter((v)=>v>0);
+  const avgHoldMs = hold.length ? hold.reduce((a,b)=>a+b,0)/hold.length : 0;
+  return { total,wins,losses,totalPnlPercent,totalPnlSol,avgPnlPercent,maxPnlPercent,minPnlPercent,grossProfitSol,grossLossSol,avgWinPct,avgLossPct,avgHoldMs,
+    total_pnl_percent: totalPnlPercent,total_pnl_sol: totalPnlSol,avg_pnl_percent: avgPnlPercent,best_pnl_percent:maxPnlPercent,worst_pnl_percent:minPnlPercent,gross_profit_sol:grossProfitSol,gross_loss_sol:grossLossSol,avg_win_pct:avgWinPct,avg_loss_pct:avgLossPct,avg_hold_ms:avgHoldMs };
+}
+
+function pnlPage(range = 'all') {
   const rawSummary = analyticsPnlSummary();
-  const history = analyticsClosedSeries();
+  const allHistory = analyticsClosedSeries();
+  const history = filterHistoryByRange(allHistory, range);
   const strategy = getEnabledStrategy();
   const rawAdvanced = analyticsAdvancedStats(history, rawSummary);
 
-  // Backward-compatible shape expected by existing dashboard template/recommendation logic
-  const summary = {
+  const summary = range === 'all' ? {
     ...rawSummary,
     total_pnl_sol: rawSummary.totalPnlSol,
     avg_pnl_percent: rawSummary.avgPnlPercent,
     best_pnl_percent: rawSummary.maxPnlPercent,
     worst_pnl_percent: rawSummary.minPnlPercent,
     total_pnl_percent: rawSummary.totalPnlPercent,
-  };
+  } : summarizeFromHistory(history);
+
   const advanced = rawAdvanced ? {
     ...rawAdvanced,
-    expectancyPct: rawAdvanced.expectancy,
-    maxDrawdownPct: rawAdvanced.maxDrawdown,
-    avgHoldMs: 0,
+    expectancyPct: rawAdvanced.expectancyPct ?? rawAdvanced.expectancy,
+    maxDrawdownPct: rawAdvanced.maxDrawdownPct ?? rawAdvanced.maxDrawdown,
+    avgHoldMs: rawAdvanced.avgHoldMs ?? summary.avg_hold_ms ?? 0,
   } : null;
 
   const tips = generateRecommendations(summary, advanced, strategy);
 
-  const winRate = summary.total ? (summary.wins / summary.total) * 100 : 0;
+  const winRate = summary.total ? (summary.wins / summary.total) * 100 : 0; // safe for filtered range too
+  const rangeLabel = range === '7d' ? '7D' : (range === '30d' ? '30D' : 'All time');
+  const lastUpdated = history.length ? new Date(Math.max(...history.map((h) => Number(h.closed_at_ms || 0)))).toLocaleString('id-ID') : '-';
+  const recoGroups = {
+    risk: tips.filter((t) => /drawdown|loss|risk|bleed|negative/i.test(t.text)),
+    performance: tips.filter((t) => /profit factor|expectancy|win rate|pnl/i.test(t.text)),
+    tuning: tips.filter((t) => !/drawdown|loss|risk|bleed|negative|profit factor|expectancy|win rate|pnl/i.test(t.text)),
+  }; if (!recoGroups.tuning.length) recoGroups.tuning = tips;
 
   const tagClass = (k) => k === 'good' ? 'tag-good' : (k === 'bad' ? 'tag-bad' : (k === 'warn' ? 'tag-warn' : 'tag-info'));
   const tagText = (k) => k === 'good' ? 'GOOD' : (k === 'bad' ? 'WATCH' : (k === 'warn' ? 'WARN' : 'INFO'));
@@ -1158,28 +1282,55 @@ function pnlPage() {
       <div class='tile'><div class='k'>Best Trade</div><div class='v up'>${fmtPct(summary.best_pnl_percent)}</div></div>
       <div class='tile'><div class='k'>Worst Trade</div><div class='v dn'>${fmtPct(summary.worst_pnl_percent)}</div></div>
       <div class='tile'><div class='k'>Profit Factor</div><div class='v'>${advanced ? (advanced.profitFactor === Infinity ? '∞' : fmtNum(advanced.profitFactor, 2)) : '-'}</div></div>
+      <div class='tile'><div class='k'>Sharpe</div><div class='v ${advanced && Number(advanced.sharpeRatio) >= 0 ? 'up' : 'dn'}'>${advanced ? fmtNum(advanced.sharpeRatio, 2) : '-'}</div></div>
       <div class='tile'><div class='k'>Expectancy</div><div class='v ${advanced && advanced.expectancyPct >= 0 ? 'up' : 'dn'}'>${advanced ? fmtPct(advanced.expectancyPct) : '-'}</div></div>
       <div class='tile'><div class='k'>Max Drawdown</div><div class='v dn'>${advanced ? fmtNum(advanced.maxDrawdownPct, 1) + '%' : '-'}</div></div>
       <div class='tile'><div class='k'>Avg Hold Time</div><div class='v'>${advanced ? fmtAge(advanced.avgHoldMs) : '-'}</div></div>
     </div>
 
+    <div class='range-controls' style='display:flex;gap:8px;margin:16px 0 12px'>
+      <button class='fbtn ${range==='all'?'active':''}' data-range='all'>All</button>
+      <button class='fbtn ${range==='7d'?'active':''}' data-range='7d'>7D</button>
+      <button class='fbtn ${range==='30d'?'active':''}' data-range='30d'>30D</button>
+    </div>
+
     <div class='charts-grid'>
       <div class='chart'>
-        <div class='chart-title'>Equity Curve (cumulative SOL)</div>
-        ${buildEquityCurveSvg(history)}
+        ${buildEquityCurveSvg(history, summary)}
       </div>
       <div class='chart'>
-        <div class='chart-title'>PnL Distribution (per trade)</div>
         ${buildHistogramSvg(history)}
       </div>
     </div>
 
     <div class='reco'>
-      <h3>Insights and Recommendations</h3>
-      <ul>
-        ${tips.map((t) => `<li><span class='tag ${tagClass(t.kind)}'>${tagText(t.kind)}</span>${esc(t.text)}</li>`).join('')}
-      </ul>
+      <div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:10px'>
+        <h3>Insights and Recommendations</h3>
+        <div style='font-size:12px;color:#94a5d4'>Last updated: ${esc(lastUpdated)}</div>
+      </div>
+      <div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px'>
+        ${recoGroups.risk.length ? `<div class='reco-group'><h4 style='margin:0 0 6px;color:#ef4444'>Risk</h4><ul style='margin:0 0 0 16px'>${recoGroups.risk.map((t)=>`<li><span class='tag ${tagClass(t.kind)}'>${tagText(t.kind)}</span>${esc(t.text)}</li>`).join('')}</ul></div>` : ''}
+        ${recoGroups.performance.length ? `<div class='reco-group'><h4 style='margin:0 0 6px;color:#22c55e'>Performance</h4><ul style='margin:0 0 0 16px'>${recoGroups.performance.map((t)=>`<li><span class='tag ${tagClass(t.kind)}'>${tagText(t.kind)}</span>${esc(t.text)}</li>`).join('')}</ul></div>` : ''}
+        ${recoGroups.tuning.length ? `<div class='reco-group'><h4 style='margin:0 0 6px;color:#f59e0b'>Tuning</h4><ul style='margin:0 0 0 16px'>${recoGroups.tuning.map((t)=>`<li><span class='tag ${tagClass(t.kind)}'>${tagText(t.kind)}</span>${esc(t.text)}</li>`).join('')}</ul></div>` : ''}
+      </div>
     </div>
+    <style>
+      .range-controls .fbtn.active { background:#3b82f6;border-color:#3b82f6; }
+      .reco-group { background:rgba(15,23,42,0.6);border:1px solid #1e293b;border-radius:12px;padding:12px; }
+      .reco-group h4 { font-size:13px;text-transform:uppercase;letter-spacing:.4px; }
+      .reco-group ul { margin:0 0 0 16px; }
+      .reco-group li { margin-bottom:4px; }
+    </style>
+    <script>
+      document.querySelectorAll('.range-controls .fbtn').forEach((b) => {
+        b.addEventListener('click', () => {
+          const r = b.getAttribute('data-range');
+          const url = new URL(window.location.href);
+          if (r === 'all') url.searchParams.delete('range'); else url.searchParams.set('range', r);
+          window.location.href = url.toString();
+        });
+      });
+    </script>
   `);
 }
 
@@ -1498,7 +1649,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, row, req);
     }
 
-    if (u.pathname === '/pnl') return sendHtml(res, 200, pnlPage(), req);
+    if (u.pathname === '/pnl') return sendHtml(res, 200, pnlPage(u.searchParams.get('range') || 'all'), req);
     if (u.pathname === '/strategy') return sendHtml(res, 200, strategyPage(), req);
     if (u.pathname === '/candidates') return sendHtml(res, 200, candidatesPage(), req);
     if (u.pathname === '/' || u.pathname === '/positions') return sendHtml(res, 200, positionsPage(), req);

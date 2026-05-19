@@ -94,6 +94,12 @@ export function computeAdvancedStats(history, summary) {
   const avgLossAbs = losses.length ? Math.abs(losses.reduce((a, h) => a + (Number(h.pnl_percent) || 0), 0) / losses.length) : 0;
   const expectancy = ((winRate / 100) * avgWin) - (((100 - winRate) / 100) * avgLossAbs);
 
+  const returns = history.map((h) => Number(h.pnl_percent) || 0);
+  const mean = returns.length ? returns.reduce((a, b) => a + b, 0) / returns.length : 0;
+  const variance = returns.length > 1 ? returns.reduce((a, r) => a + ((r - mean) ** 2), 0) / (returns.length - 1) : 0;
+  const stdDev = Math.sqrt(Math.max(variance, 0));
+  const sharpeRatio = stdDev > 0 ? mean / stdDev : 0;
+
   const holdSamples = history
     .map((h) => (Number(h.closed_at_ms) > 0 && Number(h.opened_at_ms) > 0 ? Number(h.closed_at_ms) - Number(h.opened_at_ms) : 0))
     .filter((v) => Number.isFinite(v) && v > 0);
@@ -112,6 +118,7 @@ export function computeAdvancedStats(history, summary) {
     avgWin,
     avgLossAbs,
     avgHoldMs,
+    sharpeRatio,
     p50: percentile(0.50),
     p95: percentile(0.95),
     p99: percentile(0.99),
