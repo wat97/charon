@@ -50,9 +50,9 @@ export function candidatesPage({ getCandidates, getEnabledStrategy, renderShell 
         return cj.signal.sources.map(String);
       }
       const names = [];
-      if (cj?.signals?.hasFeeClaim) names.push('FeeClaim');
-      if (cj?.signals?.hasGraduated) names.push('Graduated');
-      if (cj?.signals?.hasTrending) names.push('Trending');
+      if (cj?.signals?.hasFeeClaim) names.push('FEE');
+      if (cj?.signals?.hasGraduated) names.push('GRAD');
+      if (cj?.signals?.hasTrending) names.push('TREND');
       return names;
     })();
     const top20 = metrics.top20HolderPercent
@@ -91,7 +91,7 @@ export function candidatesPage({ getCandidates, getEnabledStrategy, renderShell 
         <div>Updated: <b>${esc(updatedAgo)} ago</b></div>
         <div>Min Source Count: <b>${fmtNum(minSourceCount, 0)}</b></div>
         <div>Source Count: <b>${fmtNum(sourceCount, 0)}</b></div>
-        <div>Sources: <b>${activeSources.length ? esc(activeSources.join(', ')) : '-'}</b></div>
+        <div>Sources: <b>${activeSources.length ? activeSources.map((s) => `<span class='src-badge'>${esc(s)}</span>`).join(' ') : '-'}</b></div>
         <div>MCAP: <b>$${fmtNum(mcap, 0)}</b></div>
         <div>Volume: <b>$${fmtNum(vol, 0)}</b></div>
         <div>Swaps: <b>${fmtNum(swaps, 0)}</b></div>
@@ -162,6 +162,18 @@ export function candidatesPage({ getCandidates, getEnabledStrategy, renderShell 
       .cand-fails { margin-top: 10px; }
       .cand-fails ul { margin: 0 0 0 16px; padding: 0; }
       .cand-fails li { font-size: 10px; color: #94a5d4; margin-bottom: 2px; }
+      .src-badge {
+        display: inline-block;
+        padding: 2px 6px;
+        margin: 0 2px 2px 0;
+        font-size: 9.5px;
+        font-weight: 600;
+        letter-spacing: 0.4px;
+        border-radius: 4px;
+        background: #1d2a4d;
+        color: #c0d2ff;
+        border: 1px solid #2c3d6c;
+      }
     </style>
 
     <script>
