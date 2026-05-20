@@ -564,6 +564,55 @@ function renderShell(title, body) {
     .tag-bad  { background:#351417; color:#fca5a5; }
     .tag-info { background:#13294b; color:#bcd0ff; }
     .tag-warn { background:#3a2a13; color:#fcd58c; }
+
+    /* Mobile-first refinements */
+    @media (max-width: 820px) {
+      body { padding: 12px; }
+      .wrap { max-width: 100%; }
+      h1 { font-size: 20px; margin-bottom: 10px; }
+      .sub { font-size: 12px; margin-bottom: 10px; }
+
+      .nav { gap: 6px; padding: 6px; margin-bottom: 12px; }
+      .pill { flex: 1 1 calc(50% - 6px); min-width: 0; padding: 10px 8px; font-size: 12px; }
+      .pill svg { display: none; }
+
+      .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+      .tile { padding: 10px; }
+      .v { font-size: 18px; }
+
+      .toolbar { align-items: stretch; flex-direction: column; }
+      .filters { width: 100%; flex-wrap: wrap; }
+      .fbtn { flex: 1 1 auto; min-height: 36px; }
+
+      .filter-bar { padding: 10px; gap: 10px; }
+      .fb-divider { display: none; }
+      .fb-section { width: 100%; }
+      .fb-group { width: 100%; }
+      .chip { min-height: 36px; }
+      .select-modern { width: 100%; min-width: 0; }
+      .date-field { flex: 1 1 0; min-width: 0; }
+      .date-input { width: 100%; }
+
+      .list { grid-template-columns: 1fr; }
+      .meta { grid-template-columns: 1fr; }
+      .pnl-big { font-size: 22px; }
+
+      #pager, #c-pager { flex-wrap: wrap; }
+      #pager .fbtn, #c-pager .fbtn { flex: 1 1 45%; min-height: 36px; }
+      #page-info, #c-pageinfo { width: 100%; text-align: center; order: -1; }
+
+      .drawer { width: 100%; max-width: 100%; border-radius: 14px 14px 0 0; }
+      .drawer-head { padding: 10px 12px; }
+      .drawer-body { padding: 10px 12px 12px; }
+      .detail-grid { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 480px) {
+      .summary { grid-template-columns: 1fr; }
+      .pill { flex-basis: 100%; }
+      .chip { font-size: 12px; padding: 8px 10px; }
+      .fb-arrow { display: none; }
+    }
   </style>
 </head>
 <body>
