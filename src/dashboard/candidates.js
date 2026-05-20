@@ -91,7 +91,7 @@ export function candidatesPage({ getCandidates, getEnabledStrategy, renderShell 
         <div>Updated: <b>${esc(updatedAgo)} ago</b></div>
         <div>Min Source Count: <b>${fmtNum(minSourceCount, 0)}</b></div>
         <div>Source Count: <b>${fmtNum(sourceCount, 0)}</b></div>
-        <div>Sources: <b>${activeSources.length ? activeSources.map((s) => `<span class='src-badge'>${esc(s)}</span>`).join(' ') : '-'}</b></div>
+        <div>Sources: <b>${activeSources.length ? activeSources.map((s) => `<span class='src-badge src-${esc(String(s).toLowerCase())}'>${esc(s)}</span>`).join(' ') : '-'}</b></div>
         <div>MCAP: <b>$${fmtNum(mcap, 0)}</b></div>
         <div>Volume: <b>$${fmtNum(vol, 0)}</b></div>
         <div>Swaps: <b>${fmtNum(swaps, 0)}</b></div>
@@ -167,12 +167,25 @@ export function candidatesPage({ getCandidates, getEnabledStrategy, renderShell 
         padding: 2px 6px;
         margin: 0 2px 2px 0;
         font-size: 9.5px;
-        font-weight: 600;
+        font-weight: 700;
         letter-spacing: 0.4px;
-        border-radius: 4px;
-        background: #1d2a4d;
-        color: #c0d2ff;
-        border: 1px solid #2c3d6c;
+        border-radius: 5px;
+        border: 1px solid transparent;
+      }
+      .src-fee {
+        background: #13294b;
+        color: #bcd0ff;
+        border-color: #2a4f86;
+      }
+      .src-grad {
+        background: #11301f;
+        color: #9bf0c4;
+        border-color: #236b46;
+      }
+      .src-trend {
+        background: #3a2510;
+        color: #ffd7a8;
+        border-color: #8a5b2a;
       }
     </style>
 
