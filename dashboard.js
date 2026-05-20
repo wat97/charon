@@ -350,6 +350,60 @@ function renderShell(title, body) {
     }
     .fbtn.active { border-color: #3b82f6; color: #dbeafe; }
 
+    .filter-bar {
+      display:flex;
+      flex-wrap:wrap;
+      align-items:flex-end;
+      gap:12px;
+      padding:12px;
+      border-radius:14px;
+      border:1px solid rgba(71,85,105,.45);
+      background:linear-gradient(180deg, rgba(15,23,42,.72), rgba(2,6,23,.66));
+    }
+    .fb-section { display:flex; flex-direction:column; gap:8px; }
+    .fb-label { font-size:11px; letter-spacing:.45px; text-transform:uppercase; color:#93a4c8; font-weight:700; }
+    .fb-group { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+    .fb-divider { width:1px; align-self:stretch; background:rgba(71,85,105,.45); margin:0 2px; }
+    .fb-arrow { color:#7f93bd; font-size:14px; }
+    .chip {
+      border:1px solid #24314d;
+      background:rgba(15,23,42,.7);
+      color:#dbe7ff;
+      border-radius:10px;
+      padding:8px 12px;
+      cursor:pointer;
+      font-size:13px;
+      font-weight:600;
+    }
+    .chip:hover { border-color:#3b82f6; color:#fff; }
+    .chip.active, .chip.primary {
+      background:linear-gradient(180deg, rgba(96,165,250,.2), rgba(59,130,246,.12));
+      border-color:#3b82f6;
+      color:#fff;
+      box-shadow:0 0 0 1px rgba(96,165,250,.15) inset;
+    }
+    .chip.ghost { background:transparent; color:#b8c7e8; }
+    .select-modern {
+      background:#0f172a;
+      color:#e6edff;
+      border:1px solid #24314d;
+      border-radius:10px;
+      padding:9px 12px;
+      min-width:160px;
+      font-size:13px;
+    }
+    .date-input {
+      background:rgba(15,23,42,0.6);
+      border:1px solid #1e293b;
+      color:#e2e8f0;
+      padding:8px 10px;
+      border-radius:10px;
+      font-size:13px;
+      font-family:inherit;
+    }
+    .date-input:focus { outline:none;border-color:#3b82f6; }
+    .date-input::-webkit-calendar-picker-indicator { filter: invert(0.7); cursor:pointer; }
+
     .layout {
       display: grid;
       grid-template-columns: 1fr;
@@ -866,6 +920,7 @@ function positionsPage() {
       data-sort-mcap='${esc(sortMcap)}'
       data-sort-opened='${esc(sortOpened)}'
       data-sort-symbol='${esc(sortSymbol)}'
+      data-opened-date='${esc(new Date(sortOpened || 0).toISOString().slice(0,10))}'
       style='${hiddenStyle}'>
       <div class='pos-top'>
         <div class='sym'>${esc(p.symbol || 'Unknown')}</div>
@@ -878,30 +933,51 @@ function positionsPage() {
 
   return renderShell('Positions', `
 
-    <div class='toolbar' style='display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px'>
+    <div class='toolbar' style='display:flex;flex-direction:column;gap:12px'>
       <div class='k'>Click a card to open full transaction detail on the right panel.</div>
-      <div style='display:flex;flex-wrap:wrap;align-items:center;gap:10px'>
-        <div class='filters'>
-          <button class='fbtn ${defaultFilter === 'all' ? 'active' : ''}' data-filter='all'>All</button>
-          <button class='fbtn ${defaultFilter === 'open' ? 'active' : ''}' data-filter='open'>Open</button>
-          <button class='fbtn ${defaultFilter === 'closed' ? 'active' : ''}' data-filter='closed'>Closed</button>
+      <div class='filter-bar pos-filter-bar'>
+        <div class='fb-section'>
+          <div class='fb-label'>Status</div>
+          <div class='fb-group filters'>
+            <button class='chip ${defaultFilter === 'all' ? 'active' : ''}' data-filter='all'>All</button>
+            <button class='chip ${defaultFilter === 'open' ? 'active' : ''}' data-filter='open'>Open</button>
+            <button class='chip ${defaultFilter === 'closed' ? 'active' : ''}' data-filter='closed'>Closed</button>
+          </div>
         </div>
-        <select id='sort-select' style='background:#0f172a;color:#e6edff;border:1px solid #24314d;border-radius:9px;padding:9px 12px'>
-          <option value='opened_desc'>Newest</option>
-          <option value='opened_asc'>Oldest</option>
-          <option value='pnl_desc'>PnL tertinggi</option>
-          <option value='pnl_asc'>PnL terendah</option>
-          <option value='mcap_desc'>MCAP terbesar</option>
-          <option value='mcap_asc'>MCAP terkecil</option>
-          <option value='symbol_asc'>Symbol A-Z</option>
-        </select>
-        <select id='quick-filter' style='background:#0f172a;color:#e6edff;border:1px solid #24314d;border-radius:9px;padding:9px 12px'>
-          <option value='all'>Semua</option>
-          <option value='winners'>PnL positif</option>
-          <option value='losers'>PnL negatif</option>
-          <option value='bigcaps'>MCAP ≥ 100k</option>
-          <option value='smallcaps'>MCAP < 100k</option>
-        </select>
+        <div class='fb-divider'></div>
+        <div class='fb-section'>
+          <div class='fb-label'>Opened Date</div>
+          <form id='positions-date-form' class='fb-group'>
+            <div class='date-field'><input type='date' id='positions-from' class='date-input' aria-label='Positions from date' /></div>
+            <span class='fb-arrow'>→</span>
+            <div class='date-field'><input type='date' id='positions-to' class='date-input' aria-label='Positions to date' /></div>
+            <button type='submit' class='chip primary'>Apply</button>
+            <button type='button' id='positions-date-reset' class='chip ghost'>Reset</button>
+          </form>
+        </div>
+        <div class='fb-divider'></div>
+        <div class='fb-section'>
+          <div class='fb-label'>Sort</div>
+          <select id='sort-select' class='select-modern'>
+            <option value='opened_desc'>Newest</option>
+            <option value='opened_asc'>Oldest</option>
+            <option value='pnl_desc'>PnL tertinggi</option>
+            <option value='pnl_asc'>PnL terendah</option>
+            <option value='mcap_desc'>MCAP terbesar</option>
+            <option value='mcap_asc'>MCAP terkecil</option>
+            <option value='symbol_asc'>Symbol A-Z</option>
+          </select>
+        </div>
+        <div class='fb-section'>
+          <div class='fb-label'>Quick Filter</div>
+          <select id='quick-filter' class='select-modern'>
+            <option value='all'>Semua</option>
+            <option value='winners'>PnL positif</option>
+            <option value='losers'>PnL negatif</option>
+            <option value='bigcaps'>MCAP ≥ 100k</option>
+            <option value='smallcaps'>MCAP < 100k</option>
+          </select>
+        </div>
       </div>
     </div>
 
@@ -951,9 +1027,13 @@ function positionsPage() {
       const drawerNext = document.getElementById('drawer-next');
       let cards = Array.from(document.querySelectorAll('.pos'));
       let currentDetailId = null;
-      const buttons = Array.from(document.querySelectorAll('.fbtn[data-filter]'));
+      const buttons = Array.from(document.querySelectorAll('.chip[data-filter]'));
       const sortSelect = document.getElementById('sort-select');
       const quickFilter = document.getElementById('quick-filter');
+      const positionsDateForm = document.getElementById('positions-date-form');
+      const positionsFromInput = document.getElementById('positions-from');
+      const positionsToInput = document.getElementById('positions-to');
+      const positionsDateReset = document.getElementById('positions-date-reset');
       const prevBtn = document.getElementById('prev-page');
       const nextBtn = document.getElementById('next-page');
       const pageInfo = document.getElementById('page-info');
@@ -965,6 +1045,8 @@ function positionsPage() {
       let currentFilter = 'open';
       let currentSort = 'opened_desc';
       let currentQuick = 'all';
+      let currentDateFrom = '';
+      let currentDateTo = '';
 
       function safe(v){ return (v === null || v === undefined) ? '-' : String(v); }
       function iso(ms){ try { return ms ? new Date(ms).toISOString() : '-' ; } catch { return '-'; } }
@@ -1022,7 +1104,8 @@ function positionsPage() {
           + " data-sort-pnl='" + escHtml(sortPnl) + "'"
           + " data-sort-mcap='" + escHtml(sortMcap) + "'"
           + " data-sort-opened='" + escHtml(sortOpened) + "'"
-          + " data-sort-symbol='" + escHtml(sortSymbol) + "'>"
+          + " data-sort-symbol='" + escHtml(sortSymbol) + "'"
+          + " data-opened-date='" + escHtml(new Date(sortOpened || 0).toISOString().slice(0,10)) + "'>"
           + "<div class='pos-top'><div class='sym'>" + escHtml(p.symbol || 'Unknown') + "</div><span class='badge " + statusClass + "'>" + escHtml(String(p.status).toUpperCase()) + "</span></div>"
           + (isClosed ? "<div class='pnl-big " + pnlClass + "'>" + escHtml(fmtPctJs(p.pnl_percent)) + "</div>" : '')
           + "<div class='meta'>" + compactMeta + "</div>"
@@ -1062,9 +1145,18 @@ function positionsPage() {
         return true;
       }
 
+      function passDateFilter(el) {
+        const opened = String(el.dataset.openedDate || '');
+        if (!opened) return true;
+        if (currentDateFrom && opened < currentDateFrom) return false;
+        if (currentDateTo && opened > currentDateTo) return false;
+        return true;
+      }
+
       function getFilteredCards() {
         return cards.filter((el) => {
           if (currentFilter !== 'all' && el.dataset.status !== currentFilter) return false;
+          if (!passDateFilter(el)) return false;
           return passQuickFilter(el);
         });
       }
@@ -1181,6 +1273,32 @@ function positionsPage() {
 
       if (sortSelect) sortSelect.addEventListener('change', () => { currentSort = sortSelect.value; currentPage = 1; renderPage(); });
       if (quickFilter) quickFilter.addEventListener('change', () => { currentQuick = quickFilter.value; currentPage = 1; renderPage(); });
+      if (positionsDateForm) {
+        positionsDateForm.addEventListener('submit', (e) => {
+          e.preventDefault();
+          currentDateFrom = positionsFromInput && positionsFromInput.value ? positionsFromInput.value : '';
+          currentDateTo = positionsToInput && positionsToInput.value ? positionsToInput.value : '';
+          if (currentDateFrom && currentDateTo && currentDateFrom > currentDateTo) {
+            const tmp = currentDateFrom;
+            currentDateFrom = currentDateTo;
+            currentDateTo = tmp;
+            if (positionsFromInput) positionsFromInput.value = currentDateFrom;
+            if (positionsToInput) positionsToInput.value = currentDateTo;
+          }
+          currentPage = 1;
+          renderPage();
+        });
+      }
+      if (positionsDateReset) {
+        positionsDateReset.addEventListener('click', () => {
+          currentDateFrom = '';
+          currentDateTo = '';
+          if (positionsFromInput) positionsFromInput.value = '';
+          if (positionsToInput) positionsToInput.value = '';
+          currentPage = 1;
+          renderPage();
+        });
+      }
       if (prevBtn) prevBtn.addEventListener('click', () => { if (currentPage > 1) { currentPage--; renderPage(); } });
       if (nextBtn) nextBtn.addEventListener('click', () => { currentPage++; renderPage(); });
       if (drawerClose) drawerClose.addEventListener('click', closeDrawer);
@@ -1283,12 +1401,64 @@ function positionsPage() {
   `);
 }
 
-function filterHistoryByRange(history, range = 'all') {
+function normalizeDateInput(value) {
+  const text = String(value || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
+  return text;
+}
+
+function getDateRangeBounds(fromDate, toDate) {
+  const from = normalizeDateInput(fromDate);
+  const to = normalizeDateInput(toDate);
+  const startMs = from ? new Date(`${from}T00:00:00`).getTime() : null;
+  const endMs = to ? new Date(`${to}T23:59:59.999`).getTime() : null;
+  if (startMs != null && endMs != null && startMs > endMs) {
+    return { startMs: endMs, endMs: startMs, fromDate: to, toDate: from };
+  }
+  return { startMs, endMs, fromDate: from, toDate: to };
+}
+
+const PNL_TZ = process.env.CHARON_TZ || 'Asia/Jakarta';
+
+function startOfDayMs(date, tz) {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false,
+  });
+  const parts = Object.fromEntries(fmt.formatToParts(date).filter((p) => p.type !== 'literal').map((p) => [p.type, p.value]));
+  const localAsUtc = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), 0, 0, 0);
+  const offsetMs = Date.UTC(
+    Number(parts.year), Number(parts.month) - 1, Number(parts.day),
+    Number(parts.hour), Number(parts.minute), Number(parts.second)
+  ) - date.getTime();
+  return localAsUtc - offsetMs;
+}
+
+function rangeKeyToDays(range) {
+  const key = String(range || '').toLowerCase();
+  return ({ '1d': 1, '3d': 3, '1w': 7, '7d': 7, '1m': 30, '30d': 30 })[key] || null;
+}
+
+function filterHistoryByRange(history, range = 'all', fromDate = '', toDate = '') {
   if (!Array.isArray(history) || !history.length) return [];
+  const hasCustomDate = normalizeDateInput(fromDate) || normalizeDateInput(toDate);
+  if (hasCustomDate) {
+    const { startMs, endMs } = getDateRangeBounds(fromDate, toDate);
+    return history.filter((h) => {
+      const closedAt = Number(h.closed_at_ms || 0);
+      if (!closedAt) return false;
+      if (startMs != null && closedAt < startMs) return false;
+      if (endMs != null && closedAt > endMs) return false;
+      return true;
+    });
+  }
   if (!range || range === 'all') return history;
-  const days = Number(String(range).replace(/d$/i, ''));
-  if (!Number.isFinite(days) || days <= 0) return history;
-  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  const days = rangeKeyToDays(range);
+  if (!days) return history;
+  const todayStart = startOfDayMs(new Date(), PNL_TZ);
+  const cutoff = todayStart - (days - 1) * 24 * 60 * 60 * 1000;
   return history.filter((h) => Number(h.closed_at_ms || 0) >= cutoff);
 }
 
@@ -1314,14 +1484,18 @@ function summarizeFromHistory(history) {
     total_pnl_percent: totalPnlPercent,total_pnl_sol: totalPnlSol,avg_pnl_percent: avgPnlPercent,best_pnl_percent:maxPnlPercent,worst_pnl_percent:minPnlPercent,gross_profit_sol:grossProfitSol,gross_loss_sol:grossLossSol,avg_win_pct:avgWinPct,avg_loss_pct:avgLossPct,avg_hold_ms:avgHoldMs };
 }
 
-function pnlPage(range = 'all') {
+function pnlPage(range = 'all', fromDate = '', toDate = '') {
   const rawSummary = analyticsPnlSummary();
   const allHistory = analyticsClosedSeries();
-  const history = filterHistoryByRange(allHistory, range);
+  const normalizedFrom = normalizeDateInput(fromDate) || '';
+  const normalizedTo = normalizeDateInput(toDate) || '';
+  const hasCustomRange = Boolean(normalizedFrom || normalizedTo);
+  const effectiveRange = hasCustomRange ? 'custom' : range;
+  const history = filterHistoryByRange(allHistory, range, normalizedFrom, normalizedTo);
   const strategy = getEnabledStrategy();
   const rawAdvanced = analyticsAdvancedStats(history, rawSummary);
 
-  const summary = range === 'all' ? {
+  const summary = (effectiveRange === 'all') ? {
     ...rawSummary,
     total_pnl_sol: rawSummary.totalPnlSol,
     avg_pnl_percent: rawSummary.avgPnlPercent,
@@ -1340,7 +1514,13 @@ function pnlPage(range = 'all') {
   const tips = generateRecommendations(summary, advanced, strategy);
 
   const winRate = summary.total ? (summary.wins / summary.total) * 100 : 0; // safe for filtered range too
-  const rangeLabel = range === '7d' ? '7D' : (range === '30d' ? '30D' : 'All time');
+  const rangeLabel = hasCustomRange
+    ? `${normalizedFrom || '...'} → ${normalizedTo || '...'}`
+    : (range === '1d' ? '1D (Today)'
+      : range === '3d' ? '3D'
+      : range === '1w' ? '1W'
+      : range === '1m' ? '1M'
+      : 'All time');
   const lastUpdated = history.length ? new Date(Math.max(...history.map((h) => Number(h.closed_at_ms || 0)))).toLocaleString('id-ID') : '-';
   const recoGroups = {
     risk: tips.filter((t) => /drawdown|loss|risk|bleed|negative/i.test(t.text)),
@@ -1368,10 +1548,36 @@ function pnlPage(range = 'all') {
       <div class='tile'><div class='k'>Avg Hold Time</div><div class='v'>${advanced ? fmtAge(advanced.avgHoldMs) : '-'}</div></div>
     </div>
 
-    <div class='range-controls' style='display:flex;gap:8px;margin:16px 0 12px'>
-      <button class='fbtn ${range==='all'?'active':''}' data-range='all'>All</button>
-      <button class='fbtn ${range==='7d'?'active':''}' data-range='7d'>7D</button>
-      <button class='fbtn ${range==='30d'?'active':''}' data-range='30d'>30D</button>
+    <div class='filter-bar'>
+      <div class='fb-section'>
+        <div class='fb-label'>Quick Range</div>
+        <div class='fb-group range-controls'>
+          <button class='chip ${!hasCustomRange && range==='all'?'active':''}' data-range='all'>All</button>
+          <button class='chip ${!hasCustomRange && range==='1d'?'active':''}' data-range='1d'>1D</button>
+          <button class='chip ${!hasCustomRange && range==='3d'?'active':''}' data-range='3d'>3D</button>
+          <button class='chip ${!hasCustomRange && range==='1w'?'active':''}' data-range='1w'>1W</button>
+          <button class='chip ${!hasCustomRange && range==='1m'?'active':''}' data-range='1m'>1M</button>
+        </div>
+      </div>
+      <div class='fb-divider'></div>
+      <div class='fb-section'>
+        <div class='fb-label'>Custom Range</div>
+        <form class='fb-group date-range-form'>
+          <div class='date-field'>
+            <input type='date' name='from' value='${esc(normalizedFrom)}' class='date-input' aria-label='From date' />
+          </div>
+          <span class='fb-arrow'>→</span>
+          <div class='date-field'>
+            <input type='date' name='to' value='${esc(normalizedTo)}' class='date-input' aria-label='To date' />
+          </div>
+          <button type='submit' class='chip primary'>Apply</button>
+          ${hasCustomRange ? `<button type='button' class='chip ghost' data-clear-dates='1'>Reset</button>` : ''}
+        </form>
+      </div>
+      <div class='fb-status' style='margin-left:auto'>
+        <span class='fb-status-label'>Active</span>
+        <span class='fb-status-value'>${esc(rangeLabel)}</span>
+      </div>
     </div>
 
     <div class='charts-grid'>
@@ -1395,21 +1601,73 @@ function pnlPage(range = 'all') {
       </div>
     </div>
     <style>
-      .range-controls .fbtn.active { background:#3b82f6;border-color:#3b82f6; }
+      .filter-bar { display:flex; flex-wrap:wrap; align-items:flex-end; gap:12px; margin:16px 0 12px; padding:12px; border-radius:14px; border:1px solid rgba(71,85,105,.45); background:linear-gradient(180deg, rgba(15,23,42,.72), rgba(2,6,23,.66)); }
+      .fb-section { display:flex; flex-direction:column; gap:8px; }
+      .fb-label { font-size:11px; letter-spacing:.45px; text-transform:uppercase; color:#93a4c8; font-weight:700; }
+      .fb-group { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+      .fb-divider { width:1px; align-self:stretch; background:rgba(71,85,105,.45); margin:0 2px; }
+      .fb-arrow { color:#7f93bd; font-size:14px; }
+      .fb-status { display:flex; flex-direction:column; gap:4px; min-width:140px; }
+      .fb-status-label { font-size:11px; text-transform:uppercase; letter-spacing:.45px; color:#8aa0cc; }
+      .fb-status-value { font-size:13px; color:#dbe7ff; font-weight:600; }
+      .chip { border:1px solid #24314d; background:rgba(15,23,42,.7); color:#dbe7ff; border-radius:10px; padding:8px 12px; cursor:pointer; font-size:13px; font-weight:600; }
+      .chip:hover { border-color:#3b82f6; color:#fff; }
+      .chip.active, .chip.primary { background:linear-gradient(180deg, rgba(96,165,250,.2), rgba(59,130,246,.12)); border-color:#3b82f6; color:#fff; box-shadow:0 0 0 1px rgba(96,165,250,.15) inset; }
+      .chip.ghost { background:transparent; color:#b8c7e8; }
       .reco-group { background:rgba(15,23,42,0.6);border:1px solid #1e293b;border-radius:12px;padding:12px; }
       .reco-group h4 { font-size:13px;text-transform:uppercase;letter-spacing:.4px; }
       .reco-group ul { margin:0 0 0 16px; }
       .reco-group li { margin-bottom:4px; }
+      .date-input {
+        background:rgba(15,23,42,0.6);
+        border:1px solid #1e293b;
+        color:#e2e8f0;
+        padding:8px 10px;
+        border-radius:10px;
+        font-size:13px;
+        font-family:inherit;
+      }
+      .date-input:focus { outline:none;border-color:#3b82f6; }
+      .date-input::-webkit-calendar-picker-indicator { filter: invert(0.7); cursor:pointer; }
     </style>
     <script>
-      document.querySelectorAll('.range-controls .fbtn').forEach((b) => {
+      document.querySelectorAll('.range-controls .chip').forEach((b) => {
         b.addEventListener('click', () => {
           const r = b.getAttribute('data-range');
           const url = new URL(window.location.href);
+          url.searchParams.delete('from');
+          url.searchParams.delete('to');
           if (r === 'all') url.searchParams.delete('range'); else url.searchParams.set('range', r);
           window.location.href = url.toString();
         });
       });
+      const dateForm = document.querySelector('.date-range-form');
+      if (dateForm) {
+        dateForm.addEventListener('submit', (e) => {
+          e.preventDefault();
+          const url = new URL(window.location.href);
+          const from = dateForm.querySelector('input[name=from]').value;
+          const to = dateForm.querySelector('input[name=to]').value;
+          url.searchParams.delete('range');
+          if (from) url.searchParams.set('from', from); else url.searchParams.delete('from');
+          if (to) url.searchParams.set('to', to); else url.searchParams.delete('to');
+          if (!from && !to) {
+            url.searchParams.delete('from');
+            url.searchParams.delete('to');
+          }
+          window.location.href = url.toString();
+        });
+      }
+      const clearDatesBtn = document.querySelector('[data-clear-dates]');
+      if (clearDatesBtn) {
+        clearDatesBtn.addEventListener('click', () => {
+          const url = new URL(window.location.href);
+          url.searchParams.delete('from');
+          url.searchParams.delete('to');
+          url.searchParams.delete('range');
+          window.location.href = url.toString();
+        });
+      }
     </script>
   `);
 }
@@ -1456,6 +1714,8 @@ function getCandidatesWsSnapshot() {
 
 function candidatesPage() {
   const rows = getCandidates(500);
+  const strategy = getEnabledStrategy();
+  const minSourceCount = Number(strategy?.config?.min_source_count ?? 0) || 0;
   const stats = rows.reduce((acc, r) => {
     acc.total++;
     acc[r.status] = (acc[r.status] || 0) + 1;
@@ -1476,7 +1736,16 @@ function candidatesPage() {
     const createdAgo = fmtAgeSince(r.created_at_ms);
     const updatedAgo = fmtAgeSince(r.updated_at_ms);
     const tokenName = token.name || sym;
-    const sourceCount = cj.signal?.sources?.length || cj.signal?.source_count || 0;
+    const legacySourceCount = cj.signal?.sources?.length || cj.signal?.source_count || 0;
+    const derivedSignalsCount = (() => {
+      const s = cj.signals;
+      if (!s || typeof s !== 'object') return 0;
+      if (Array.isArray(s.sources)) return s.sources.length;
+      const boolFlags = ['hasFeeClaim', 'hasGraduated', 'hasTrending'];
+      const fromFlags = boolFlags.reduce((acc, k) => acc + (s[k] ? 1 : 0), 0);
+      return fromFlags;
+    })();
+    const sourceCount = legacySourceCount || derivedSignalsCount || 0;
     const top20 = metrics.top20HolderPercent ?? metrics.top20_holder_percent;
     const savedWallets = metrics.savedWalletHolders ?? metrics.saved_wallet_holders;
     const rug = metrics.trendingRugRatio ?? metrics.rug_ratio;
@@ -1489,6 +1758,7 @@ function candidatesPage() {
       data-sort-mcap='${esc(mcap == null ? '' : Number(mcap))}'
       data-sort-vol='${esc(vol == null ? '' : Number(vol))}'
       data-sort-swaps='${esc(swaps == null ? '' : Number(swaps))}'
+      data-sort-source='${esc(sourceCount == null ? '' : Number(sourceCount))}'
       data-sort-symbol='${esc(sym)}'>
       <div class='pos-top'>
         <div>
@@ -1501,7 +1771,8 @@ function candidatesPage() {
         <div>Mint: <b><code>${esc(String(r.mint || '').slice(0, 8))}...${esc(String(r.mint || '').slice(-4))}</code></b></div>
         <div>Created: <b>${esc(createdAgo)} ago</b></div>
         <div>Updated: <b>${esc(updatedAgo)} ago</b></div>
-        <div>Sources: <b>${fmtNum(sourceCount, 0)}</b></div>
+        <div>Min Source Count: <b>${fmtNum(minSourceCount, 0)}</b></div>
+        <div>Source Count: <b>${fmtNum(sourceCount, 0)}</b></div>
         <div>MCAP: <b>$${fmtNum(mcap, 0)}</b></div>
         <div>Volume: <b>$${fmtNum(vol, 0)}</b></div>
         <div>Swaps: <b>${fmtNum(swaps, 0)}</b></div>
@@ -1519,12 +1790,13 @@ function candidatesPage() {
   }).join('');
 
   return renderShell('Candidates', `
-    <div class='summary'>
-      <div class='tile'><div class='k'>Rows loaded</div><div class='v'>${stats.total || 0}</div></div>
-      <div class='tile'><div class='k'>Filtered</div><div class='v dn'>${stats.filtered || 0}</div></div>
-      <div class='tile'><div class='k'>Accepted</div><div class='v up'>${stats.accepted || 0}</div></div>
-      <div class='tile'><div class='k'>Watch</div><div class='v'>${stats.watch || 0}</div></div>
-    </div>
+      <div class='summary'>
+        <div class='tile'><div class='k'>Rows loaded</div><div class='v'>${stats.total || 0}</div></div>
+        <div class='tile'><div class='k'>Filtered</div><div class='v dn'>${stats.filtered || 0}</div></div>
+        <div class='tile'><div class='k'>Accepted</div><div class='v up'>${stats.accepted || 0}</div></div>
+        <div class='tile'><div class='k'>Watch</div><div class='v'>${stats.watch || 0}</div></div>
+        <div class='tile'><div class='k'>Min Source Count</div><div class='v'>${fmtNum(minSourceCount, 0)}</div></div>
+      </div>
 
     <div class='toolbar' style='display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px'>
       <div class='k'>Latest 500 candidates · 10 per page · 2 cards per row</div>
@@ -1542,6 +1814,8 @@ function candidatesPage() {
           <option value='mcap_asc'>MCAP terkecil</option>
           <option value='vol_desc'>Volume terbesar</option>
           <option value='swaps_desc'>Swap terbanyak</option>
+          <option value='source_desc'>Source Count tertinggi</option>
+          <option value='source_asc'>Source Count terendah</option>
           <option value='symbol_asc'>Symbol A-Z</option>
         </select>
       </div>
@@ -1586,7 +1860,7 @@ function candidatesPage() {
         const arr = items.slice();
         arr.sort((a, b) => {
           if (cSortKey === 'symbol_asc') return String(a.dataset.sortSymbol || '').localeCompare(String(b.dataset.sortSymbol || ''));
-          const map = { created_desc: 'sortCreated', created_asc: 'sortCreated', mcap_desc: 'sortMcap', mcap_asc: 'sortMcap', vol_desc: 'sortVol', swaps_desc: 'sortSwaps' };
+          const map = { created_desc: 'sortCreated', created_asc: 'sortCreated', mcap_desc: 'sortMcap', mcap_asc: 'sortMcap', vol_desc: 'sortVol', swaps_desc: 'sortSwaps', source_desc: 'sortSource', source_asc: 'sortSource' };
           const key = map[cSortKey] || 'sortCreated';
           const va = Number(a.dataset[key]);
           const vb = Number(b.dataset[key]);
@@ -1764,7 +2038,18 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, row, req);
     }
 
-    if (u.pathname === '/pnl') return sendHtml(res, 200, pnlPage(u.searchParams.get('range') || 'all'), req);
+    if (u.pathname === '/pnl') {
+      return sendHtml(
+        res,
+        200,
+        pnlPage(
+          u.searchParams.get('range') || 'all',
+          u.searchParams.get('from') || '',
+          u.searchParams.get('to') || '',
+        ),
+        req,
+      );
+    }
     if (u.pathname === '/strategy') return sendHtml(res, 200, strategyPage(), req);
     if (u.pathname === '/candidates') return sendHtml(res, 200, candidatesPage(), req);
     if (u.pathname === '/' || u.pathname === '/positions') return sendHtml(res, 200, positionsPage(), req);
