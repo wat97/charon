@@ -20,11 +20,17 @@ export function candidatesPage({ getCandidates, getEnabledStrategy, renderShell 
     const fj = safeJson(r.filter_result_json, {});
     const token = cj.token || {};
     const metrics = cj.metrics || {};
+    const holders = cj.holders || {};
+    const chart = cj.chart || {};
+    const graduation = cj.graduation || {};
+    const trending = cj.trending || {};
+    const gmgn = cj.gmgn || {};
+    const savedWalletExposure = cj.savedWalletExposure || {};
     const fails = Array.isArray(fj.failures) ? fj.failures : [];
     const sym = token.symbol || token.name || 'Unknown';
-    const mcap = metrics.marketCapUsd ?? metrics.market_cap;
-    const vol = metrics.trendingVolumeUsd ?? metrics.volumeUsd;
-    const swaps = metrics.trendingSwaps ?? metrics.swaps;
+    const mcap = metrics.marketCapUsd ?? metrics.market_cap ?? trending.market_cap ?? graduation.marketCap;
+    const vol = metrics.trendingVolumeUsd ?? metrics.volumeUsd ?? trending.volume ?? graduation.volume;
+    const swaps = metrics.trendingSwaps ?? metrics.swaps ?? ((Number(trending.buys || 0) + Number(trending.sells || 0)) || null);
 
     const createdAgo = fmtAgeSince(r.created_at_ms);
     const updatedAgo = fmtAgeSince(r.updated_at_ms);
@@ -39,11 +45,20 @@ export function candidatesPage({ getCandidates, getEnabledStrategy, renderShell 
       return fromFlags;
     })();
     const sourceCount = legacySourceCount || derivedSignalsCount || 0;
-    const top20 = metrics.top20HolderPercent ?? metrics.top20_holder_percent;
-    const savedWallets = metrics.savedWalletHolders ?? metrics.saved_wallet_holders;
+    const top20 = metrics.top20HolderPercent
+      ?? metrics.top20_holder_percent
+      ?? holders.top20Percent
+      ?? graduation.topHoldersPercent;
+    const savedWallets = metrics.savedWalletHolders
+      ?? metrics.saved_wallet_holders
+      ?? savedWalletExposure.holderCount;
     const rug = metrics.trendingRugRatio ?? metrics.rug_ratio;
-    const bundler = metrics.trendingBundlerRate ?? metrics.bundler_rate;
-    const ath = metrics.athDistancePct ?? metrics.ath_distance_pct;
+    const rugRiskFlag = chart.topBlastRisk;
+    const bundler = metrics.trendingBundlerRate ?? metrics.bundler_rate ?? graduation.sniperCount;
+    const ath = metrics.athDistancePct
+      ?? metrics.ath_distance_pct
+      ?? chart.distanceFromAthPercent
+      ?? chart.belowRangeHighPercent;
     const failPreview = fails.length ? fails.slice(0, 3).map((x) => `<li>${esc(x)}</li>`).join('') : '<li>No filter failures recorded</li>';
 
     return `<div class='pos ${r.status === 'accepted' ? 'pos-open' : 'pos-closed'} cand-card' data-status='${esc(r.status)}'
@@ -72,8 +87,8 @@ export function candidatesPage({ getCandidates, getEnabledStrategy, renderShell 
         <div>Top20: <b>${top20 == null ? '-' : fmtNum(top20, 1) + '%'}</b></div>
         <div>Saved Wallets: <b>${savedWallets == null ? '-' : fmtNum(savedWallets, 0)}</b></div>
         <div>ATH Dist: <b>${ath == null ? '-' : fmtNum(ath, 1) + '%'}</b></div>
-        <div>Rug Ratio: <b>${rug == null ? '-' : fmtNum(Number(rug) * 100, 1) + '%'}</b></div>
-        <div>Bundler: <b>${bundler == null ? '-' : fmtNum(Number(bundler) * 100, 1) + '%'}</b></div>
+        <div>Rug Ratio: <b>${rug != null ? fmtNum(Number(rug) * 100, 1) + '%' : (rugRiskFlag == null ? '-' : (rugRiskFlag ? 'HIGH' : 'LOW'))}</b></div>
+        <div>Bundler: <b>${bundler == null ? '-' : fmtNum(Number(bundler), 2)}</b></div>
       </div>
       <div class='cand-fails'>
         <div class='k' style='margin-bottom:6px'>Filter Notes · ${fails.length} item</div>
@@ -121,8 +136,14 @@ export function candidatesPage({ getCandidates, getEnabledStrategy, renderShell 
       <button id='c-next' class='fbtn'>Next →</button>
     </div>
     <style>
-      #c-list { grid-template-columns: repeat(2, minmax(280px, 1fr)); }
+      #c-list { grid-template-columns: repeat(2, minmax(240px, 1fr)); }
       @media (max-width: 720px) { #c-list { grid-template-columns: 1fr; } }
+      @media (max-width: 480px) {
+        .cand-card { padding: 10px; }
+        .cand-meta { grid-template-columns: 1fr; gap: 4px; }
+        .cand-meta div { font-size: 10px; }
+        .cand-meta div b { font-size: 11px; }
+      }
       .cand-card { padding: 12px; }
       .cand-meta { grid-template-columns: 1fr 1fr; gap: 6px 10px; }
       .cand-meta div { font-size: 11px; }
