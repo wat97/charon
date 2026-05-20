@@ -1,3 +1,8 @@
+/**
+ * Renders the /candidates page.
+ * Dependency-injected via { getCandidates, getEnabledStrategy, renderShell }
+ * so the module stays decoupled from dashboard.js internals.
+ */
 import { esc, fmtNum, fmtAgeSince, safeJson } from './format.js';
 
 export function candidatesPage({ getCandidates, getEnabledStrategy, renderShell }) {

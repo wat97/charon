@@ -1,3 +1,8 @@
+/**
+ * Renders the /strategy page (summary tiles + grouped config sections).
+ * Dependency-injected via { getEnabledStrategy, strategySectionRows,
+ *   renderShell, esc, fmtNum, fmtSolRaw }.
+ */
 export function strategyPage({ getEnabledStrategy, strategySectionRows, renderShell, esc, fmtNum, fmtSolRaw }) {
   const s = getEnabledStrategy();
   const c = s?.config || {};

@@ -1,3 +1,7 @@
+/**
+ * Format helpers for dashboard rendering.
+ * Exports: now, esc, fmtNum, fmtPct, fmtSol, fmtAge, fmtAgeSince, safeJson.
+ */
 export const now = () => Date.now();
 
 export const esc = (s) => String(s ?? '')

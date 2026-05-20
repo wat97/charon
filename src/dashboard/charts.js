@@ -1,3 +1,7 @@
+/**
+ * Inline-SVG chart builders for the dashboard.
+ * Exports: buildEquityCurveSvg(history, summary), buildHistogramSvg(history).
+ */
 export function buildEquityCurveSvg(history, summary) {
   if (history.length < 2) return `<div class='k'>Not enough closed trades yet.</div>`;
   const w = 900, h = 240, padL = 42, padR = 18, padT = 16, padB = 32;

@@ -1,3 +1,8 @@
+/**
+ * Renders the / and /positions page (cards, drawer, realtime WS handlers).
+ * Dependency-injected via { getPositionCardsLite, renderShell, TROJAN_BOT,
+ *   fmtPct, fmtNum, esc, fmtAgeSince }.
+ */
 export function positionsPage({ getPositionCardsLite, renderShell, TROJAN_BOT, fmtPct, fmtNum, esc, fmtAgeSince }) {
   const all = getPositionCardsLite();
 

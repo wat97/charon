@@ -1,3 +1,7 @@
+/**
+ * Renders the /pnl page (summary tiles, charts, recommendations).
+ * Dependency-injected via analytics + format + chart helpers.
+ */
 export function pnlPage({ range = 'all', fromDate = '', toDate = '', analyticsPnlSummary, analyticsClosedSeries, normalizeDateInput, filterHistoryByRange, getEnabledStrategy, analyticsAdvancedStats, summarizeFromHistory, generateRecommendations, renderShell, buildEquityCurveSvg, buildHistogramSvg, fmtNum, fmtSol, fmtPct, fmtAge, esc }) {
   const rawSummary = analyticsPnlSummary();
   const allHistory = analyticsClosedSeries();

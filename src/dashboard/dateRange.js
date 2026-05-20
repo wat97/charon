@@ -1,3 +1,8 @@
+/**
+ * Calendar/timezone-aware date range filters used by PnL and Positions pages.
+ * Exports: PNL_TZ, normalizeDateInput, getDateRangeBounds, startOfDayMs,
+ *   rangeKeyToDays, filterHistoryByRange.
+ */
 export const PNL_TZ = process.env.CHARON_TZ || 'Asia/Jakarta';
 
 export function normalizeDateInput(value) {

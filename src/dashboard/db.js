@@ -1,3 +1,11 @@
+/**
+ * Read-only DB query helpers for the dashboard.
+ * Each function takes the better-sqlite3 `db` instance as the first argument
+ * so the dashboard process owns the connection.
+ * Exports: getEnabledStrategy, getPositions, getPositionCardsLite,
+ *   getPositionDetailById, getCandidates, getPositionsWsSnapshot,
+ *   getCandidatesWsSnapshot.
+ */
 import { esc, fmtNum, fmtPct, fmtSol, fmtAge, fmtAgeSince, safeJson } from './format.js';
 
 export function getEnabledStrategy(db) {
