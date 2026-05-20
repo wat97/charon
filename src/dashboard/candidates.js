@@ -45,6 +45,16 @@ export function candidatesPage({ getCandidates, getEnabledStrategy, renderShell 
       return fromFlags;
     })();
     const sourceCount = legacySourceCount || derivedSignalsCount || 0;
+    const activeSources = (() => {
+      if (Array.isArray(cj?.signal?.sources) && cj.signal.sources.length) {
+        return cj.signal.sources.map(String);
+      }
+      const names = [];
+      if (cj?.signals?.hasFeeClaim) names.push('FeeClaim');
+      if (cj?.signals?.hasGraduated) names.push('Graduated');
+      if (cj?.signals?.hasTrending) names.push('Trending');
+      return names;
+    })();
     const top20 = metrics.top20HolderPercent
       ?? metrics.top20_holder_percent
       ?? holders.top20Percent
@@ -81,6 +91,7 @@ export function candidatesPage({ getCandidates, getEnabledStrategy, renderShell 
         <div>Updated: <b>${esc(updatedAgo)} ago</b></div>
         <div>Min Source Count: <b>${fmtNum(minSourceCount, 0)}</b></div>
         <div>Source Count: <b>${fmtNum(sourceCount, 0)}</b></div>
+        <div>Sources: <b>${activeSources.length ? esc(activeSources.join(', ')) : '-'}</b></div>
         <div>MCAP: <b>$${fmtNum(mcap, 0)}</b></div>
         <div>Volume: <b>$${fmtNum(vol, 0)}</b></div>
         <div>Swaps: <b>${fmtNum(swaps, 0)}</b></div>
