@@ -845,7 +845,7 @@ function positionsPage() {
       <div>Size: <b>${fmtNum(p.size_sol, 4)} SOL</b></div>
       <div>Age: <b>${esc(fmtAgeSince(p.opened_at_ms))}</b></div>
       <div>Entry MCAP: <b>$${fmtNum(p.entry_mcap, 0)}</b></div>
-      ${isClosed ? `<div>PnL %: <b class='${pnlClass}'>${fmtPct(p.pnl_percent)}</b></div>` : `<div>Status: <b>Monitoring</b></div>`}
+      ${isClosed ? `<div>Exit MCAP: <b>$${fmtNum(p.exit_mcap, 0)}</b></div><div>PnL %: <b class='${pnlClass}'>${fmtPct(p.pnl_percent)}</b></div>` : `<div>Status: <b>Monitoring</b></div>`}
     `;
 
     const hiddenStyle = '';
@@ -1005,7 +1005,7 @@ function positionsPage() {
           + "<div>Age: <b>" + escHtml(fmtAgeSinceJs(p.opened_at_ms)) + "</b></div>"
           + "<div>Entry MCAP: <b>$" + fmtNumJs(p.entry_mcap, 0) + "</b></div>"
           + (isClosed
-              ? ("<div>PnL %: <b class='" + pnlClass + "'>" + fmtPctJs(p.pnl_percent) + "</b></div>")
+              ? ("<div>Exit MCAP: <b>$" + fmtNumJs(p.exit_mcap, 0) + "</b></div><div>PnL %: <b class='" + pnlClass + "'>" + fmtPctJs(p.pnl_percent) + "</b></div>")
               : "<div>Status: <b>Monitoring</b></div>");
 
         const sortPnl = (p.pnl_percent == null) ? '' : Number(p.pnl_percent);
