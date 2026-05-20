@@ -5,14 +5,17 @@
   "private": true,
   "scripts": {
     "start": "node index.js",
-    "check": "node --check index.js && node --check src/app.js && node --check src/config.js && node --check src/liveExecutor.js"
+    "api": "node api.js",
+    "check": "node --check index.js && node --check api.js && node --check src/app.js && node --check src/api/index.js && node --check src/config.js && node --check src/liveExecutor.js"
   },
   "dependencies": {
     "@solana/web3.js": "^1.98.4",
     "axios": "^1.7.9",
     "better-sqlite3": "^12.9.0",
     "bs58": "^6.0.0",
+    "cors": "^2.8.6",
     "dotenv": "^16.4.7",
+    "express": "^5.2.1",
     "node-telegram-bot-api": "^0.66.0",
     "ws": "^8.18.0"
   }
