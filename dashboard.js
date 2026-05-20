@@ -584,9 +584,16 @@ function renderShell(title, body) {
       .pill {
         flex: 1 1 calc(50% - 6px);
         min-width: 0;
-        padding: 11px 8px;
+        padding: 12px 8px;
         font-size: 12px;
-        min-height: 40px;
+        min-height: 44px;
+        border-radius: 8px;
+      }
+      .pill.active {
+        background: #1d2a4d;
+        color: #fff;
+        font-weight: 600;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.2);
       }
       .pill svg { display: none; }
 
@@ -630,7 +637,7 @@ function renderShell(title, body) {
 
     @media (max-width: 480px) {
       .summary { grid-template-columns: 1fr; }
-      .pill { flex-basis: 100%; }
+      .pill { flex-basis: 100%; min-height: 48px; padding: 14px 12px; font-size: 13px; }
       .chip { font-size: 12px; padding: 8px 10px; }
       .fb-arrow { display: none; }
     }

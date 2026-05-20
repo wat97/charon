@@ -121,6 +121,46 @@ export function positionsPage({ getPositionCardsLite, renderShell, TROJAN_BOT, f
       #pos-list { grid-template-columns: repeat(3, minmax(240px, 1fr)); }
       @media (max-width: 1200px) { #pos-list { grid-template-columns: repeat(2, minmax(240px, 1fr)); } }
       @media (max-width: 760px) { #pos-list { grid-template-columns: 1fr; } }
+      @media (max-width: 480px) {
+        .pos { padding: 10px; }
+        .pos-top { flex-direction: column; align-items: flex-start; gap: 4px; }
+        .pos-top .sym { font-size: 14px; }
+        .meta { font-size: 11px; }
+        .meta div { margin-bottom: 4px; }
+        .meta div b { font-size: 12px; }
+        .pnl-big { font-size: 18px; }
+      }
+      .pos-filter-bar {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      @media (max-width: 760px) {
+        .pos-filter-bar {
+          flex-direction: column;
+        }
+        .fb-section {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+        .fb-label {
+          font-size: 11px;
+        }
+        .filters {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+        }
+        .chip {
+          padding: 8px 12px;
+          min-height: 36px;
+        }
+        .select-modern {
+          padding: 8px 12px;
+          font-size: 12px;
+        }
+      }
     </style>
     <div class='drawer-backdrop' id='drawer-backdrop'></div>
     <div class='side drawer' id='detail-drawer'>
