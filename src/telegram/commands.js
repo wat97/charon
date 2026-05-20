@@ -84,7 +84,10 @@ export async function handleMessage(msg) {
     if (!mint) return bot.sendMessage(chatId, 'Usage: /stochrsi <mint> [resolution=15m]\n\nResolutions: 1m, 5m, 15m, 1h, 4h, 1d');
     return sendStochRsi(chatId, mint, resolution);
   }
-  if (text.startsWith('/pnlsummary')) return sendPnlSummary(chatId);
+  if (text.startsWith('/pnlsummary')) {
+    const range = (text.split(/\s+/)[1] || 'all').toLowerCase();
+    return sendPnlSummary(chatId, null, range);
+  }
   if (text.startsWith('/pnl')) return sendPnl(chatId);
   if (text.startsWith('/learn')) {
     const windowArg = text.split(/\s+/)[1] || '12h';
@@ -280,7 +283,7 @@ async function sendMenu(chatId = TELEGRAM_CHAT_ID) {
   });
 }
 
-async function sendPnl(chatId, query = null) {
+export async function sendPnl(chatId, query = null) {
   const wallets = savedWallets();
   if (!wallets.length) {
     const text = '📊 <b>PnL</b>\n\nNo saved wallets. Use /walletadd &lt;label&gt; &lt;address&gt;.';
@@ -332,14 +335,19 @@ export async function sendStochRsi(chatId, mint, resolution = '15m') {
   return bot.sendMessage(chatId, lines.join('\n'), { parse_mode: 'HTML' });
 }
 
-async function sendPnlSummary(chatId, query = null) {
-  const summary = analyticsPnlSummary();
-  const history = analyticsClosedSeries();
+export async function sendPnlSummary(chatId, query = null, range = 'all') {
+  const normalizedRange = ['all', '1d', '3d', '1w', '1m'].includes(String(range || '').toLowerCase())
+    ? String(range || '').toLowerCase()
+    : 'all';
+  const summary = analyticsPnlSummary(normalizedRange);
+  const history = analyticsClosedSeries(normalizedRange);
   const advanced = analyticsAdvancedStats(history, summary);
   const tips = advanced ? analyticsRecommendations(summary, advanced) : [];
+  const rangeLabel = normalizedRange.toUpperCase();
 
   const lines = [
     '📈 <b>PnL Summary</b>',
+    `Range: <b>${rangeLabel}</b>`,
     '',
     `Closed trades: <b>${summary.total}</b>`,
     `Wins/Losses: <b>${summary.wins}</b> / <b>${summary.losses}</b>`,
@@ -368,7 +376,24 @@ async function sendPnlSummary(chatId, query = null) {
   }
 
   const text = lines.join('\n');
-  return query ? editMenuMessage(query, text, navKeyboard()) : bot.sendMessage(chatId, text, { parse_mode: 'HTML', disable_web_page_preview: true });
+  if (query) {
+    const keyboard = {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: 'All', callback_data: 'menu:pnlsummary:all' },
+            { text: '1D', callback_data: 'menu:pnlsummary:1d' },
+            { text: '3D', callback_data: 'menu:pnlsummary:3d' },
+            { text: '1W', callback_data: 'menu:pnlsummary:1w' },
+            { text: '1M', callback_data: 'menu:pnlsummary:1m' },
+          ],
+          [{ text: 'Back', callback_data: 'menu:main' }],
+        ],
+      },
+    };
+    return editMenuMessage(query, text, keyboard);
+  }
+  return bot.sendMessage(chatId, text, { parse_mode: 'HTML', disable_web_page_preview: true });
 }
 
 function parseSetFilter(text) {

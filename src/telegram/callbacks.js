@@ -55,14 +55,20 @@ export async function handleCallback(query) {
   if (data === 'menu:strategy') return editMenuMessage(query, strategyMenuText(), strategyKeyboard());
   if (data === 'menu:wallets') return editMenuMessage(query, walletsText(), navKeyboard());
   if (data === 'menu:positions') return editMenuMessage(query, positionsText(), navKeyboard());
-  if (data === 'menu:positionsv2') return editMenuMessage(query, positionsTextV2(), positionsKeyboardV2());
+  if (data === 'menu:positionsv2' || data.startsWith('menu:positionsv2:')) {
+    const parts = data.split(':');
+    const filter = parts[2] || 'all';
+    const page = Number(parts[3] || '1');
+    return editMenuMessage(query, positionsTextV2(filter, page), positionsKeyboardV2(filter, page));
+  }
   if (data === 'menu:pnl') {
-    const { sendPnl } = await import('./send.js');
+    const { sendPnl } = await import('./commands.js');
     return sendPnl(chatId, query);
   }
-  if (data === 'menu:pnlsummary') {
+  if (data === 'menu:pnlsummary' || data.startsWith('menu:pnlsummary:')) {
     const { sendPnlSummary } = await import('./commands.js');
-    return sendPnlSummary(chatId, query);
+    const range = data.split(':')[2] || 'all';
+    return sendPnlSummary(chatId, query, range);
   }
   if (data === 'menu:stochrsi') {
     const text = [

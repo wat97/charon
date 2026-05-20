@@ -199,30 +199,57 @@ export function positionsText() {
   return `📍 <b>Positions</b>\n\n${text}`;
 }
 
-export function positionsTextV2() {
-  const maxPos = activeStrategy().max_open_positions ?? numSetting('max_open_positions', 3);
-  const rows = openPositions().slice(0, maxPos);
-  if (!rows.length) return `📍 <b>Positions v2</b>\n\nNo open positions.`;
-  const lines = rows.map(r => {
+export function positionsTextV2(filter = 'all', page = 1) {
+  const PAGE_SIZE = 5;
+  const allRows = allPositions(200);
+  const normalizedFilter = ['all', 'open', 'closed'].includes(filter) ? filter : 'all';
+  const rows = normalizedFilter === 'all' ? allRows : allRows.filter((r) => r.status === normalizedFilter);
+  if (!rows.length) return `📍 <b>Positions v2</b>\n\nNo ${normalizedFilter} positions.`;
+
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const safePage = Math.min(Math.max(1, Number(page) || 1), totalPages);
+  const start = (safePage - 1) * PAGE_SIZE;
+  const pageRows = rows.slice(start, start + PAGE_SIZE);
+
+  const lines = pageRows.map(r => {
     const symbol = escapeHtml(r.symbol || short(r.mint));
     const pnl = r.pnl_percent != null ? Number(r.pnl_percent) : (r.high_water_mcap && r.entry_mcap ? (Number(r.high_water_mcap)/Number(r.entry_mcap)-1)*100 : null);
     const pnlText = pnl != null ? fmtPct(pnl) : 'LIVE';
     const arrow = pnl == null ? '⚪' : (pnl >= 0 ? '🟢' : '🔴');
-    return `${arrow} <b>${symbol}</b> · <b>${pnlText}</b>`;
+    const badge = r.status === 'open' ? 'open' : 'closed';
+    return `${arrow} <b>${symbol}</b> · <b>${pnlText}</b> · <code>${badge}</code>`;
   });
-  return `📍 <b>Positions v2</b> (${rows.length}/${maxPos})\n\n${lines.join('\n')}`;
+  return `📍 <b>Positions v2</b>\nFilter: <b>${normalizedFilter.toUpperCase()}</b> · Page <b>${safePage}/${totalPages}</b> · Total <b>${rows.length}</b>\n\n${lines.join('\n')}`;
 }
 
-export function positionsKeyboardV2() {
-  const maxPos = activeStrategy().max_open_positions ?? numSetting('max_open_positions', 3);
-  const rows = openPositions().slice(0, maxPos);
-  const buttons = rows.map(r => [{
-    text: `${r.symbol || short(r.mint)} · open`,
-    callback_data: `pos:${r.id}`,
-  }]);
-  buttons.push([{ text: '🔄 Refresh', callback_data: 'menu:positionsv2' }]);
-  buttons.push([{ text: '📋 All Positions', callback_data: 'menu:positions' }]);
-  buttons.push([{ text: 'Back', callback_data: 'menu:main' }]);
+export function positionsKeyboardV2(filter = 'all', page = 1) {
+  const PAGE_SIZE = 5;
+  const allRows = allPositions(200);
+  const normalizedFilter = ['all', 'open', 'closed'].includes(filter) ? filter : 'all';
+  const rows = normalizedFilter === 'all' ? allRows : allRows.filter((r) => r.status === normalizedFilter);
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const safePage = Math.min(Math.max(1, Number(page) || 1), totalPages);
+  const start = (safePage - 1) * PAGE_SIZE;
+  const pageRows = rows.slice(start, start + PAGE_SIZE);
+
+  const buttons = [
+    [
+      { text: normalizedFilter === 'all' ? '✅ All' : 'All', callback_data: `menu:positionsv2:all:1` },
+      { text: normalizedFilter === 'open' ? '✅ Open' : 'Open', callback_data: `menu:positionsv2:open:1` },
+      { text: normalizedFilter === 'closed' ? '✅ Closed' : 'Closed', callback_data: `menu:positionsv2:closed:1` },
+    ],
+    ...pageRows.map(r => [{
+      text: `${r.symbol || short(r.mint)} · ${r.status}`,
+      callback_data: `pos:${r.id}`,
+    }]),
+    [
+      { text: '⬅️ Prev', callback_data: `menu:positionsv2:${normalizedFilter}:${Math.max(1, safePage - 1)}` },
+      { text: `${safePage}/${totalPages}`, callback_data: `menu:positionsv2:${normalizedFilter}:${safePage}` },
+      { text: 'Next ➡️', callback_data: `menu:positionsv2:${normalizedFilter}:${Math.min(totalPages, safePage + 1)}` },
+    ],
+    [{ text: '🔄 Refresh', callback_data: `menu:positionsv2:${normalizedFilter}:${safePage}` }],
+    [{ text: 'Back', callback_data: 'menu:main' }],
+  ];
   return { reply_markup: { inline_keyboard: buttons } };
 }
 
