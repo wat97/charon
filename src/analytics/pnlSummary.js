@@ -1,6 +1,49 @@
 import { db } from '../db/connection.js';
 
-export function getPnlSummary() {
+const PNL_TZ = process.env.CHARON_TZ || 'Asia/Jakarta';
+
+function startOfDayMs(date, tz) {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+  const parts = Object.fromEntries(fmt.formatToParts(date).filter((p) => p.type !== 'literal').map((p) => [p.type, p.value]));
+  const localAsUtc = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    0, 0, 0
+  );
+  // figure out tz offset for this date
+  const offsetMs = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour),
+    Number(parts.minute),
+    Number(parts.second)
+  ) - date.getTime();
+  return localAsUtc - offsetMs;
+}
+
+function rangeWhere(range) {
+  const key = String(range || 'all').toLowerCase();
+  if (key === 'all') return { clause: '', params: [] };
+  const days = ({ '1d': 1, '3d': 3, '1w': 7, '7d': 7, '1m': 30, '30d': 30 })[key];
+  if (!days) return { clause: '', params: [] };
+  const todayStart = startOfDayMs(new Date(), PNL_TZ);
+  const cutoff = todayStart - (days - 1) * 24 * 60 * 60 * 1000;
+  return { clause: ' AND closed_at_ms >= ?', params: [cutoff] };
+}
+
+export function getPnlSummary(range = 'all') {
+  const { clause, params } = rangeWhere(range);
   const rows = db.prepare(`
     SELECT
       COUNT(*) as total,
@@ -17,8 +60,8 @@ export function getPnlSummary() {
       AVG(CASE WHEN pnl_percent < 0 THEN pnl_percent END) as avgLossPct,
       AVG(CASE WHEN opened_at_ms IS NOT NULL AND closed_at_ms IS NOT NULL THEN closed_at_ms - opened_at_ms END) as avgHoldMs
     FROM dry_run_positions
-    WHERE status = 'closed'
-  `).get();
+    WHERE status = 'closed'${clause}
+  `).get(...params);
   const total = Number(rows.total) || 0;
   const wins = Number(rows.wins) || 0;
   const losses = Number(rows.losses) || 0;
@@ -60,13 +103,14 @@ export function getPnlSummary() {
   };
 }
 
-export function getClosedSeries() {
+export function getClosedSeries(range = 'all') {
+  const { clause, params } = rangeWhere(range);
   return db.prepare(`
     SELECT closed_at_ms, opened_at_ms, pnl_percent, pnl_sol
     FROM dry_run_positions
-    WHERE status = 'closed'
+    WHERE status = 'closed'${clause}
     ORDER BY closed_at_ms ASC
-  `).all();
+  `).all(...params);
 }
 
 export function computeAdvancedStats(history, summary) {
