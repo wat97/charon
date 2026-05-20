@@ -45,7 +45,7 @@ export function getPositionsWsSnapshot(db) {
 
 export function getCandidates(db, limit = 200) {
   return db.prepare(`
-    SELECT id, mint, symbol, status, created_at_ms, updated_at_ms, candidate_json, filter_result_json
+    SELECT id, mint, status, created_at_ms, updated_at_ms, candidate_json, filter_result_json
     FROM candidates
     ORDER BY id DESC
     LIMIT ?
