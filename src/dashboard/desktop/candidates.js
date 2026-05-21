@@ -61,9 +61,31 @@ export function desktopCandidatesPage({ getCandidates, getEnabledStrategy }) {
     const mcap = metrics.marketCapUsd ?? metrics.market_cap ?? trending.market_cap;
     const liq = metrics.liquidityUsd ?? trending.liquidity;
     const vol = metrics.trendingVolumeUsd ?? metrics.volumeUsd ?? trending.volume;
-    const swaps = metrics.trendingSwaps ?? metrics.swaps;
+    const swapsRaw = metrics.trendingSwaps ?? metrics.swaps ?? trending.swaps;
+    const swaps24 = cj?.gmgn?.price?.swaps_24h;
+    const swaps6h = cj?.gmgn?.price?.swaps_6h;
+    const swaps1h = cj?.gmgn?.price?.swaps_1h;
+    const swaps = (swapsRaw && Number(swapsRaw) > 0)
+      ? swapsRaw
+      : (Number(swaps24) > 0 ? swaps24 : (Number(swaps6h) > 0 ? swaps6h : (Number(swaps1h) > 0 ? swaps1h : swapsRaw)));
     const top20 = metrics.top20HolderPercent ?? holders.top20Percent;
     const ath = chart.distanceFromAthPercent ?? chart.belowRangeHighPercent;
+
+    const tokenLaunchMs = (() => {
+      const candidates = [
+        cj?.jupiterAsset?.firstPool?.createdAt,
+        cj?.jupiterAsset?.createdAt,
+        cj?.trending?.createdAt,
+        token?.created_at,
+        token?.createdAt,
+      ];
+      for (const c of candidates) {
+        if (!c) continue;
+        const t = typeof c === 'number' ? c : Date.parse(c);
+        if (Number.isFinite(t) && t > 0) return t;
+      }
+      return r.created_at_ms || 0;
+    })();
 
     const activeSources = (() => {
       const names = [];
@@ -115,7 +137,7 @@ export function desktopCandidatesPage({ getCandidates, getEnabledStrategy }) {
         <div class='dc-metric'><span class='dc-mk'>Liq</span><span class='dc-mv'>${fmtCompact(liq)}</span></div>
         <div class='dc-metric'><span class='dc-mk'>Vol</span><span class='dc-mv'>${fmtCompact(vol)}</span></div>
         <div class='dc-metric'><span class='dc-mk'>Swaps</span><span class='dc-mv'>${fmtCount(swaps)}</span></div>
-        <div class='dc-metric'><span class='dc-mk'>Age</span><span class='dc-mv'>${fmtAgeSince(r.created_at_ms)}</span></div>
+        <div class='dc-metric'><span class='dc-mk'>Age</span><span class='dc-mv'>${fmtAgeSince(tokenLaunchMs)}</span></div>
       </div>
 
       <div class='dc-chips'>
