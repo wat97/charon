@@ -1012,18 +1012,6 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, row, req);
     }
 
-    if (u.pathname === '/pnl') {
-      return sendHtml(
-        res,
-        200,
-        pnlPage(
-          u.searchParams.get('range') || 'all',
-          u.searchParams.get('from') || '',
-          u.searchParams.get('to') || '',
-        ),
-        req,
-      );
-    }
     if (u.pathname === '/strategy') {
       if (isMobile(req)) return sendHtml(res, 200, mobileStrategyPage({ getEnabledStrategy }), req);
       return sendHtml(res, 200, desktopStrategyPage({ getEnabledStrategy }), req);
@@ -1032,8 +1020,9 @@ const server = http.createServer(async (req, res) => {
       if (isMobile(req)) return sendHtml(res, 200, mobileCandidatesPage({ getCandidates, getEnabledStrategy }), req);
       return sendHtml(res, 200, desktopCandidatesPage({ getCandidates, getEnabledStrategy }), req);
     }
-    if (u.pathname === '/pnl-mobile' || (u.pathname === '/pnl' && isMobile(req))) {
-      return sendHtml(res, 200, mobilePnlPage({ getPositionCardsLite }), req);
+    if (u.pathname === '/pnl') {
+      if (isMobile(req)) return sendHtml(res, 200, mobilePnlPage({ getPositionCardsLite }), req);
+      return sendHtml(res, 200, desktopPnlPage({ getPositionCardsLite }), req);
     }
     if (u.pathname === '/' || u.pathname === '/positions') {
       if (isMobile(req)) return sendHtml(res, 200, mobilePositionsPage({ getPositionCardsLite, TROJAN_BOT }), req);
