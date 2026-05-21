@@ -146,6 +146,11 @@ export function desktopCandidatesPage({ getCandidates, getEnabledStrategy }) {
     </div>
 
     <div class='dc-grid' id='dc-list'>${cards || `<div class='ds-empty'><div class='ds-empty-icon'>🎯</div>No candidates yet</div>`}</div>
+    <div class='d-pager' id='dc-pager'>
+      <button class='dc-chip' id='dc-prev'>← Prev</button>
+      <div class='d-page-info' id='dc-page-info'>Page 1 / 1</div>
+      <button class='dc-chip' id='dc-next'>Next →</button>
+    </div>
 
     <style>
       .dc-filters {
@@ -304,27 +309,62 @@ export function desktopCandidatesPage({ getCandidates, getEnabledStrategy }) {
         color: #fca5a5;
         line-height: 1.4;
       }
+
+      .d-pager {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        margin-top: 16px;
+        padding: 8px 0;
+      }
+      .d-page-info {
+        font-size: 12px;
+        color: var(--muted);
+        text-align: center;
+      }
+      .d-pager .dc-chip[disabled] { opacity: 0.4; pointer-events: none; }
     </style>
 
     <script>
       const cAll = Array.from(document.querySelectorAll('#dc-list .dc-card'));
       const cListEl = document.getElementById('dc-list');
       const cFilters = Array.from(document.querySelectorAll('.dc-chip[data-cf]'));
+      const cPrevBtn = document.getElementById('dc-prev');
+      const cNextBtn = document.getElementById('dc-next');
+      const cPageInfo = document.getElementById('dc-page-info');
       let cFilter = 'all';
+      const C_PAGE_SIZE = 10;
+      let cPage = 1;
+
+      function cFiltered() {
+        return cAll.filter(el => cFilter === 'all' || el.dataset.status === cFilter);
+      }
 
       function cRender() {
-        const items = cAll.filter(el => cFilter === 'all' || el.dataset.status === cFilter);
-        cListEl.innerHTML = items.length
-          ? items.map(el => el.outerHTML).join('')
+        const filtered = cFiltered();
+        const totalPages = Math.max(1, Math.ceil(filtered.length / C_PAGE_SIZE));
+        if (cPage > totalPages) cPage = totalPages;
+        const start = (cPage - 1) * C_PAGE_SIZE;
+        const pageItems = filtered.slice(start, start + C_PAGE_SIZE);
+        cListEl.innerHTML = pageItems.length
+          ? pageItems.map(el => el.outerHTML).join('')
           : '<div class="ds-empty"><div class="ds-empty-icon">🎯</div>No items</div>';
+        cPageInfo.textContent = 'Page ' + cPage + ' / ' + totalPages + ' · ' + filtered.length + ' item';
+        cPrevBtn.disabled = cPage <= 1;
+        cNextBtn.disabled = cPage >= totalPages;
       }
 
       cFilters.forEach(b => b.addEventListener('click', () => {
         cFilters.forEach(x => x.classList.remove('active'));
         b.classList.add('active');
         cFilter = b.dataset.cf;
+        cPage = 1;
         cRender();
       }));
+      cPrevBtn.addEventListener('click', () => { if (cPage > 1) { cPage--; cRender(); window.scrollTo({ top: 0, behavior: 'smooth' }); } });
+      cNextBtn.addEventListener('click', () => { cPage++; cRender(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
+      cRender();
     </script>
   `;
 

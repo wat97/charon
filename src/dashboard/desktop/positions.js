@@ -73,6 +73,11 @@ export function desktopPositionsPage({ getPositionCardsLite, TROJAN_BOT }) {
     </div>
 
     <div class='dp-grid' id='dp-list'>${cards || `<div class='ds-empty'><div class='ds-empty-icon'>📊</div>No positions yet</div>`}</div>
+    <div class='d-pager' id='dp-pager'>
+      <button class='dp-chip' id='dp-prev'>← Prev</button>
+      <div class='d-page-info' id='dp-page-info'>Page 1 / 1</div>
+      <button class='dp-chip' id='dp-next'>Next →</button>
+    </div>
 
     <style>
       .dp-filters {
@@ -156,16 +161,36 @@ export function desktopPositionsPage({ getPositionCardsLite, TROJAN_BOT }) {
       }
       .st-open { background: rgba(34,197,94,0.12); color: #6ee7b7; }
       .st-closed { background: rgba(148,165,212,0.1); color: var(--muted); }
+
+      .d-pager {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        margin-top: 16px;
+        padding: 8px 0;
+      }
+      .d-page-info {
+        font-size: 12px;
+        color: var(--muted);
+        text-align: center;
+      }
+      .d-pager .dc-chip[disabled] { opacity: 0.4; pointer-events: none; }
     </style>
 
     <script>
       const pAll = Array.from(document.querySelectorAll('#dp-list .dp-card'));
       const pListEl = document.getElementById('dp-list');
       const pFilters = Array.from(document.querySelectorAll('.dp-chip[data-pf]'));
+      const pPrevBtn = document.getElementById('dp-prev');
+      const pNextBtn = document.getElementById('dp-next');
+      const pPageInfo = document.getElementById('dp-page-info');
       let pFilter = 'all';
+      const P_PAGE_SIZE = 10;
+      let pPage = 1;
 
-      function pRender() {
-        const items = pAll.filter(el => {
+      function pFiltered() {
+        return pAll.filter(el => {
           if (pFilter === 'all') return true;
           if (pFilter === 'open') return el.dataset.status === 'open';
           if (pFilter === 'closed') return el.dataset.status === 'closed';
@@ -173,17 +198,32 @@ export function desktopPositionsPage({ getPositionCardsLite, TROJAN_BOT }) {
           if (pFilter === 'losers') return Number(el.dataset.sortPnl) < 0;
           return true;
         });
-        pListEl.innerHTML = items.length
-          ? items.map(el => el.outerHTML).join('')
+      }
+
+      function pRender() {
+        const filtered = pFiltered();
+        const totalPages = Math.max(1, Math.ceil(filtered.length / P_PAGE_SIZE));
+        if (pPage > totalPages) pPage = totalPages;
+        const start = (pPage - 1) * P_PAGE_SIZE;
+        const pageItems = filtered.slice(start, start + P_PAGE_SIZE);
+        pListEl.innerHTML = pageItems.length
+          ? pageItems.map(el => el.outerHTML).join('')
           : '<div class="ds-empty"><div class="ds-empty-icon">📊</div>No items</div>';
+        pPageInfo.textContent = 'Page ' + pPage + ' / ' + totalPages + ' · ' + filtered.length + ' item';
+        pPrevBtn.disabled = pPage <= 1;
+        pNextBtn.disabled = pPage >= totalPages;
       }
 
       pFilters.forEach(b => b.addEventListener('click', () => {
         pFilters.forEach(x => x.classList.remove('active'));
         b.classList.add('active');
         pFilter = b.dataset.pf;
+        pPage = 1;
         pRender();
       }));
+      pPrevBtn.addEventListener('click', () => { if (pPage > 1) { pPage--; pRender(); window.scrollTo({ top: 0, behavior: 'smooth' }); } });
+      pNextBtn.addEventListener('click', () => { pPage++; pRender(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
+      pRender();
     </script>
   `;
 

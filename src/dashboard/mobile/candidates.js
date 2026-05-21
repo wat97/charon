@@ -143,6 +143,11 @@ export function mobileCandidatesPage({ getCandidates, getEnabledStrategy }) {
     </div>
 
     <div id='mc-list'>${cards || `<div class='m-empty'><div class='m-empty-icon'>🎯</div>No candidates yet</div>`}</div>
+    <div class='m-pager' id='mc-pager'>
+      <button class='m-chip' id='mc-prev'>← Prev</button>
+      <div class='m-page-info' id='mc-page-info'>Page 1 / 1</div>
+      <button class='m-chip' id='mc-next'>Next →</button>
+    </div>
 
     <style>
       .mc-card {
@@ -298,27 +303,63 @@ export function mobileCandidatesPage({ getCandidates, getEnabledStrategy }) {
         color: #fca5a5;
         line-height: 1.4;
       }
+
+      .m-pager {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-top: 10px;
+        padding: 4px 0;
+      }
+      .m-page-info {
+        font-size: 11px;
+        color: var(--muted);
+        text-align: center;
+        flex: 1;
+      }
+      .m-pager .m-chip[disabled] { opacity: 0.4; pointer-events: none; }
     </style>
 
     <script>
       const cAll = Array.from(document.querySelectorAll('#mc-list .mc-card'));
       const cListEl = document.getElementById('mc-list');
       const cFilters = Array.from(document.querySelectorAll('.m-chip[data-cf]'));
+      const cPrevBtn = document.getElementById('mc-prev');
+      const cNextBtn = document.getElementById('mc-next');
+      const cPageInfo = document.getElementById('mc-page-info');
       let cFilter = 'all';
+      const C_PAGE_SIZE = 10;
+      let cPage = 1;
+
+      function cFiltered() {
+        return cAll.filter(el => cFilter === 'all' || el.dataset.status === cFilter);
+      }
 
       function cRender() {
-        const items = cAll.filter(el => cFilter === 'all' || el.dataset.status === cFilter);
-        cListEl.innerHTML = items.length
-          ? items.map(el => el.outerHTML).join('')
+        const filtered = cFiltered();
+        const totalPages = Math.max(1, Math.ceil(filtered.length / C_PAGE_SIZE));
+        if (cPage > totalPages) cPage = totalPages;
+        const start = (cPage - 1) * C_PAGE_SIZE;
+        const pageItems = filtered.slice(start, start + C_PAGE_SIZE);
+        cListEl.innerHTML = pageItems.length
+          ? pageItems.map(el => el.outerHTML).join('')
           : '<div class="m-empty"><div class="m-empty-icon">🎯</div>No items for this filter</div>';
+        cPageInfo.textContent = 'Page ' + cPage + ' / ' + totalPages + ' · ' + filtered.length + ' item';
+        cPrevBtn.disabled = cPage <= 1;
+        cNextBtn.disabled = cPage >= totalPages;
       }
 
       cFilters.forEach(b => b.addEventListener('click', () => {
         cFilters.forEach(x => x.classList.remove('active'));
         b.classList.add('active');
         cFilter = b.dataset.cf;
+        cPage = 1;
         cRender();
       }));
+      cPrevBtn.addEventListener('click', () => { if (cPage > 1) { cPage--; cRender(); window.scrollTo({ top: 0, behavior: 'smooth' }); } });
+      cNextBtn.addEventListener('click', () => { cPage++; cRender(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
+      cRender();
     </script>
   `;
 

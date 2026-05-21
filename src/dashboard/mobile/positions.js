@@ -71,6 +71,11 @@ export function mobilePositionsPage({ getPositionCardsLite, TROJAN_BOT }) {
     </div>
 
     <div id='mp-list'>${cards || `<div class='m-empty'><div class='m-empty-icon'>📊</div>No positions yet</div>`}</div>
+    <div class='m-pager' id='mp-pager'>
+      <button class='m-chip' id='mp-prev'>← Prev</button>
+      <div class='m-page-info' id='mp-page-info'>Page 1 / 1</div>
+      <button class='m-chip' id='mp-next'>Next →</button>
+    </div>
 
     <style>
       .mp-card {
@@ -128,16 +133,37 @@ export function mobilePositionsPage({ getPositionCardsLite, TROJAN_BOT }) {
       }
       .st-open { background: rgba(34,197,94,0.12); color: #6ee7b7; }
       .st-closed { background: rgba(148,165,212,0.1); color: var(--muted); }
+
+      .m-pager {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-top: 10px;
+        padding: 4px 0;
+      }
+      .m-page-info {
+        font-size: 11px;
+        color: var(--muted);
+        text-align: center;
+        flex: 1;
+      }
+      .m-pager .m-chip[disabled] { opacity: 0.4; pointer-events: none; }
     </style>
 
     <script>
       const pAll = Array.from(document.querySelectorAll('#mp-list .mp-card'));
       const pListEl = document.getElementById('mp-list');
       const pFilters = Array.from(document.querySelectorAll('.m-chip[data-pf]'));
+      const pPrevBtn = document.getElementById('mp-prev');
+      const pNextBtn = document.getElementById('mp-next');
+      const pPageInfo = document.getElementById('mp-page-info');
       let pFilter = 'all';
+      const P_PAGE_SIZE = 10;
+      let pPage = 1;
 
-      function pRender() {
-        const items = pAll.filter(el => {
+      function pFiltered() {
+        return pAll.filter(el => {
           if (pFilter === 'all') return true;
           if (pFilter === 'open') return el.dataset.status === 'open';
           if (pFilter === 'closed') return el.dataset.status === 'closed';
@@ -145,17 +171,32 @@ export function mobilePositionsPage({ getPositionCardsLite, TROJAN_BOT }) {
           if (pFilter === 'losers') return Number(el.dataset.sortPnl) < 0;
           return true;
         });
-        pListEl.innerHTML = items.length
-          ? items.map(el => el.outerHTML).join('')
+      }
+
+      function pRender() {
+        const filtered = pFiltered();
+        const totalPages = Math.max(1, Math.ceil(filtered.length / P_PAGE_SIZE));
+        if (pPage > totalPages) pPage = totalPages;
+        const start = (pPage - 1) * P_PAGE_SIZE;
+        const pageItems = filtered.slice(start, start + P_PAGE_SIZE);
+        pListEl.innerHTML = pageItems.length
+          ? pageItems.map(el => el.outerHTML).join('')
           : '<div class="m-empty"><div class="m-empty-icon">📊</div>No items</div>';
+        pPageInfo.textContent = 'Page ' + pPage + ' / ' + totalPages + ' · ' + filtered.length + ' item';
+        pPrevBtn.disabled = pPage <= 1;
+        pNextBtn.disabled = pPage >= totalPages;
       }
 
       pFilters.forEach(b => b.addEventListener('click', () => {
         pFilters.forEach(x => x.classList.remove('active'));
         b.classList.add('active');
         pFilter = b.dataset.pf;
+        pPage = 1;
         pRender();
       }));
+      pPrevBtn.addEventListener('click', () => { if (pPage > 1) { pPage--; pRender(); window.scrollTo({ top: 0, behavior: 'smooth' }); } });
+      pNextBtn.addEventListener('click', () => { pPage++; pRender(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
+      pRender();
     </script>
   `;
 
