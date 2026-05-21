@@ -44,12 +44,43 @@ export function getPositionsWsSnapshot(db) {
 }
 
 export function getCandidates(db, limit = 200) {
-  return db.prepare(`
+  const rows = db.prepare(`
     SELECT id, mint, status, created_at_ms, updated_at_ms, candidate_json, filter_result_json
     FROM candidates
     ORDER BY id DESC
     LIMIT ?
   `).all(limit);
+  if (!rows.length) return rows;
+
+  // Attach latest decision (verdict, confidence, reason, action) per candidate
+  // so the dashboard can show "why still hold/buy/etc".
+  const ids = rows.map((r) => r.id);
+  const placeholders = ids.map(() => '?').join(',');
+  const decisions = db.prepare(`
+    SELECT trigger_candidate_id AS cid, action, reason, verdict, confidence
+    FROM decision_logs
+    WHERE trigger_candidate_id IN (${placeholders})
+    ORDER BY id DESC
+  `).all(...ids);
+  const byCid = new Map();
+  for (const d of decisions) {
+    if (!byCid.has(d.cid)) byCid.set(d.cid, d);
+  }
+  for (const r of rows) {
+    const d = byCid.get(r.id);
+    if (d) {
+      r.last_action = d.action || null;
+      r.last_reason = d.reason || null;
+      r.last_verdict = d.verdict || null;
+      r.last_confidence = d.confidence != null ? Number(d.confidence) : null;
+    } else {
+      r.last_action = null;
+      r.last_reason = null;
+      r.last_verdict = null;
+      r.last_confidence = null;
+    }
+  }
+  return rows;
 }
 
 export function getCandidatesWsSnapshot(db) {

@@ -98,6 +98,30 @@ export function candidatesPage({ getCandidates, getEnabledStrategy, renderShell 
     const updatedAgo = fmtAgeSince(r.updated_at_ms);
     const mintShort = String(r.mint || '').slice(0, 6) + '…' + String(r.mint || '').slice(-4);
 
+    // Reason block: show why still hold/buy/etc
+    const reasonBlock = (() => {
+      if (!r.last_action || !r.last_reason) return '';
+      const isBuy = r.status === 'buy';
+      const isWatch = r.status === 'watch';
+      const verdict = r.last_verdict || 'N/A';
+      const confidence = r.last_confidence != null ? `${r.last_confidence}%` : '-';
+      const action = r.last_action;
+      const reason = (r.last_reason || '').slice(0, 200);
+      if (isBuy) {
+        return `<div class='cc-reason'>
+          <div class='cr-label'>Still hold: ${esc(action)} (${esc(verdict)} ${esc(confidence)})</div>
+          <div class='cr-text'>${esc(reason)}</div>
+        </div>`;
+      }
+      if (isWatch) {
+        return `<div class='cc-reason'>
+          <div class='cr-label'>Watch: ${esc(verdict)} ${esc(confidence)}</div>
+          <div class='cr-text'>${esc(reason)}</div>
+        </div>`;
+      }
+      return '';
+    })();
+
     const statusClass = r.status === 'accepted' ? 'b-open'
       : r.status === 'buy' ? 'b-buy'
       : r.status === 'watch' ? 'b-watch'
@@ -156,6 +180,8 @@ export function candidatesPage({ getCandidates, getEnabledStrategy, renderShell 
       </div>
 
       ${failsBlock}
+
+      ${reasonBlock}
 
       <div class='cc-foot'>
         <code class='cc-mint'>${esc(mintShort)}</code>
@@ -368,6 +394,28 @@ export function candidatesPage({ getCandidates, getEnabledStrategy, renderShell 
         color: #cbd5e1;
         margin-bottom: 2px;
         line-height: 1.35;
+      }
+
+      .cc-reason {
+        margin-top: 8px;
+        padding: 8px 10px;
+        background: rgba(245,158,11,0.08);
+        border-left: 2px solid rgba(245,158,11,0.35);
+        border-radius: 4px;
+      }
+      .cr-label {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        color: #fcd34d;
+        text-transform: uppercase;
+        margin-bottom: 4px;
+      }
+      .cr-text {
+        font-size: 11px;
+        color: #e6edff;
+        line-height: 1.4;
+        margin: 0;
       }
 
       .cc-foot {
