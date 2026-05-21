@@ -142,6 +142,20 @@ export function mobileCandidatesPage({ getCandidates, getEnabledStrategy }) {
       <button class='m-chip' data-cf='filtered'>Filtered</button>
     </div>
 
+    <div class='m-sort-row'>
+      <label class='m-sort-label'>Sort</label>
+      <select class='m-sort' id='mc-sort'>
+        <option value='newest'>Newest</option>
+        <option value='oldest'>Oldest</option>
+        <option value='mcap_desc'>MCAP ↓</option>
+        <option value='mcap_asc'>MCAP ↑</option>
+        <option value='vol_desc'>Volume ↓</option>
+        <option value='vol_asc'>Volume ↑</option>
+        <option value='symbol_asc'>Symbol A-Z</option>
+        <option value='symbol_desc'>Symbol Z-A</option>
+      </select>
+    </div>
+
     <div id='mc-list'>${cards || `<div class='m-empty'><div class='m-empty-icon'>🎯</div>No candidates yet</div>`}</div>
     <div class='m-pager' id='mc-pager'>
       <button class='m-chip' id='mc-prev'>← Prev</button>
@@ -319,6 +333,36 @@ export function mobileCandidatesPage({ getCandidates, getEnabledStrategy }) {
         flex: 1;
       }
       .m-pager .m-chip[disabled] { opacity: 0.4; pointer-events: none; }
+
+      .m-sort-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+      .m-sort-label {
+        font-size: 10px;
+        font-weight: 600;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+      }
+      .m-sort {
+        flex: 1;
+        background: rgba(15, 23, 42, 0.6);
+        border: 1px solid rgba(96, 165, 250, 0.18);
+        color: var(--text);
+        padding: 8px 10px;
+        font-size: 12px;
+        font-weight: 600;
+        border-radius: 10px;
+        appearance: none;
+        -webkit-appearance: none;
+        background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a5d4' stroke-width='2'><polyline points='6 9 12 15 18 9'></polyline></svg>");
+        background-repeat: no-repeat;
+        background-position: right 10px center;
+        padding-right: 28px;
+      }
     </style>
 
     <script>
@@ -328,7 +372,9 @@ export function mobileCandidatesPage({ getCandidates, getEnabledStrategy }) {
       const cPrevBtn = document.getElementById('mc-prev');
       const cNextBtn = document.getElementById('mc-next');
       const cPageInfo = document.getElementById('mc-page-info');
+      const cSortSel = document.getElementById('mc-sort');
       let cFilter = 'all';
+      let cSort = 'newest';
       const C_PAGE_SIZE = 10;
       let cPage = 1;
 
@@ -336,8 +382,27 @@ export function mobileCandidatesPage({ getCandidates, getEnabledStrategy }) {
         return cAll.filter(el => cFilter === 'all' || el.dataset.status === cFilter);
       }
 
+      function cSorted(items) {
+        const arr = items.slice();
+        const num = (el, key) => {
+          const v = Number(el.dataset[key]);
+          return Number.isFinite(v) ? v : 0;
+        };
+        switch (cSort) {
+          case 'oldest': arr.sort((a, b) => num(a, 'created') - num(b, 'created')); break;
+          case 'mcap_desc': arr.sort((a, b) => num(b, 'mcap') - num(a, 'mcap')); break;
+          case 'mcap_asc': arr.sort((a, b) => num(a, 'mcap') - num(b, 'mcap')); break;
+          case 'vol_desc': arr.sort((a, b) => num(b, 'vol') - num(a, 'vol')); break;
+          case 'vol_asc': arr.sort((a, b) => num(a, 'vol') - num(b, 'vol')); break;
+          case 'symbol_asc': arr.sort((a, b) => (a.dataset.symbol || '').localeCompare(b.dataset.symbol || '')); break;
+          case 'symbol_desc': arr.sort((a, b) => (b.dataset.symbol || '').localeCompare(a.dataset.symbol || '')); break;
+          default: arr.sort((a, b) => num(b, 'created') - num(a, 'created'));
+        }
+        return arr;
+      }
+
       function cRender() {
-        const filtered = cFiltered();
+        const filtered = cSorted(cFiltered());
         const totalPages = Math.max(1, Math.ceil(filtered.length / C_PAGE_SIZE));
         if (cPage > totalPages) cPage = totalPages;
         const start = (cPage - 1) * C_PAGE_SIZE;
@@ -357,6 +422,7 @@ export function mobileCandidatesPage({ getCandidates, getEnabledStrategy }) {
         cPage = 1;
         cRender();
       }));
+      cSortSel.addEventListener('change', () => { cSort = cSortSel.value; cPage = 1; cRender(); });
       cPrevBtn.addEventListener('click', () => { if (cPage > 1) { cPage--; cRender(); window.scrollTo({ top: 0, behavior: 'smooth' }); } });
       cNextBtn.addEventListener('click', () => { cPage++; cRender(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
       cRender();

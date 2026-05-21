@@ -30,7 +30,8 @@ export function mobilePositionsPage({ getPositionCardsLite, TROJAN_BOT }) {
 
     return `<a href='/?id=${esc(p.id)}' class='mp-card' data-status='${esc(p.status)}'
       data-sort-pnl='${esc(p.pnl_percent ?? '')}'
-      data-sort-opened='${esc(p.opened_at_ms ?? 0)}'>
+      data-sort-opened='${esc(p.opened_at_ms ?? 0)}'
+      data-sort-size='${esc(p.size_sol ?? 0)}'>
       <div class='mp-row'>
         <div class='mp-id'>
           <div class='mp-sym'>${esc(p.symbol || 'Unknown')}</div>
@@ -68,6 +69,18 @@ export function mobilePositionsPage({ getPositionCardsLite, TROJAN_BOT }) {
       <button class='m-chip' data-pf='closed'>Closed</button>
       <button class='m-chip' data-pf='winners'>Winners</button>
       <button class='m-chip' data-pf='losers'>Losers</button>
+    </div>
+
+    <div class='m-sort-row'>
+      <label class='m-sort-label'>Sort</label>
+      <select class='m-sort' id='mp-sort'>
+        <option value='newest'>Newest</option>
+        <option value='oldest'>Oldest</option>
+        <option value='pnl_desc'>PnL% ↓</option>
+        <option value='pnl_asc'>PnL% ↑</option>
+        <option value='size_desc'>Size ↓</option>
+        <option value='size_asc'>Size ↑</option>
+      </select>
     </div>
 
     <div id='mp-list'>${cards || `<div class='m-empty'><div class='m-empty-icon'>📊</div>No positions yet</div>`}</div>
@@ -149,6 +162,36 @@ export function mobilePositionsPage({ getPositionCardsLite, TROJAN_BOT }) {
         flex: 1;
       }
       .m-pager .m-chip[disabled] { opacity: 0.4; pointer-events: none; }
+
+      .m-sort-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+      .m-sort-label {
+        font-size: 10px;
+        font-weight: 600;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+      }
+      .m-sort {
+        flex: 1;
+        background: rgba(15, 23, 42, 0.6);
+        border: 1px solid rgba(96, 165, 250, 0.18);
+        color: var(--text);
+        padding: 8px 10px;
+        font-size: 12px;
+        font-weight: 600;
+        border-radius: 10px;
+        appearance: none;
+        -webkit-appearance: none;
+        background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a5d4' stroke-width='2'><polyline points='6 9 12 15 18 9'></polyline></svg>");
+        background-repeat: no-repeat;
+        background-position: right 10px center;
+        padding-right: 28px;
+      }
     </style>
 
     <script>
@@ -158,7 +201,9 @@ export function mobilePositionsPage({ getPositionCardsLite, TROJAN_BOT }) {
       const pPrevBtn = document.getElementById('mp-prev');
       const pNextBtn = document.getElementById('mp-next');
       const pPageInfo = document.getElementById('mp-page-info');
+      const pSortSel = document.getElementById('mp-sort');
       let pFilter = 'all';
+      let pSort = 'newest';
       const P_PAGE_SIZE = 10;
       let pPage = 1;
 
@@ -173,8 +218,25 @@ export function mobilePositionsPage({ getPositionCardsLite, TROJAN_BOT }) {
         });
       }
 
+      function pSorted(items) {
+        const arr = items.slice();
+        const num = (el, key) => {
+          const v = Number(el.dataset[key]);
+          return Number.isFinite(v) ? v : 0;
+        };
+        switch (pSort) {
+          case 'oldest': arr.sort((a, b) => num(a, 'sortOpened') - num(b, 'sortOpened')); break;
+          case 'pnl_desc': arr.sort((a, b) => num(b, 'sortPnl') - num(a, 'sortPnl')); break;
+          case 'pnl_asc': arr.sort((a, b) => num(a, 'sortPnl') - num(b, 'sortPnl')); break;
+          case 'size_desc': arr.sort((a, b) => num(b, 'sortSize') - num(a, 'sortSize')); break;
+          case 'size_asc': arr.sort((a, b) => num(a, 'sortSize') - num(b, 'sortSize')); break;
+          default: arr.sort((a, b) => num(b, 'sortOpened') - num(a, 'sortOpened'));
+        }
+        return arr;
+      }
+
       function pRender() {
-        const filtered = pFiltered();
+        const filtered = pSorted(pFiltered());
         const totalPages = Math.max(1, Math.ceil(filtered.length / P_PAGE_SIZE));
         if (pPage > totalPages) pPage = totalPages;
         const start = (pPage - 1) * P_PAGE_SIZE;
@@ -194,6 +256,7 @@ export function mobilePositionsPage({ getPositionCardsLite, TROJAN_BOT }) {
         pPage = 1;
         pRender();
       }));
+      pSortSel.addEventListener('change', () => { pSort = pSortSel.value; pPage = 1; pRender(); });
       pPrevBtn.addEventListener('click', () => { if (pPage > 1) { pPage--; pRender(); window.scrollTo({ top: 0, behavior: 'smooth' }); } });
       pNextBtn.addEventListener('click', () => { pPage++; pRender(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
       pRender();

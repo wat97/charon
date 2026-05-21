@@ -30,7 +30,8 @@ export function desktopPositionsPage({ getPositionCardsLite, TROJAN_BOT }) {
 
     return `<div class='dp-card' data-id='${esc(p.id)}' data-status='${esc(p.status)}'
       data-sort-pnl='${esc(p.pnl_percent ?? '')}'
-      data-sort-opened='${esc(p.opened_at_ms ?? 0)}'>
+      data-sort-opened='${esc(p.opened_at_ms ?? 0)}'
+      data-sort-size='${esc(p.size_sol ?? 0)}'>
       <div class='dp-top'>
         <div class='dp-id'>
           <div class='dp-sym'>${esc(p.symbol || 'Unknown')}</div>
@@ -70,6 +71,18 @@ export function desktopPositionsPage({ getPositionCardsLite, TROJAN_BOT }) {
       <button class='dp-chip' data-pf='closed'>Closed</button>
       <button class='dp-chip' data-pf='winners'>Winners</button>
       <button class='dp-chip' data-pf='losers'>Losers</button>
+    </div>
+
+    <div class='d-sort-row'>
+      <label class='d-sort-label'>Sort</label>
+      <select class='d-sort' id='dp-sort'>
+        <option value='newest'>Newest</option>
+        <option value='oldest'>Oldest</option>
+        <option value='pnl_desc'>PnL% ↓</option>
+        <option value='pnl_asc'>PnL% ↑</option>
+        <option value='size_desc'>Size ↓</option>
+        <option value='size_asc'>Size ↑</option>
+      </select>
     </div>
 
     <div class='dp-grid' id='dp-list'>${cards || `<div class='ds-empty'><div class='ds-empty-icon'>📊</div>No positions yet</div>`}</div>
@@ -176,6 +189,36 @@ export function desktopPositionsPage({ getPositionCardsLite, TROJAN_BOT }) {
         text-align: center;
       }
       .d-pager .dc-chip[disabled] { opacity: 0.4; pointer-events: none; }
+
+      .d-sort-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 16px;
+      }
+      .d-sort-label {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+      }
+      .d-sort {
+        flex: 1;
+        background: rgba(15, 23, 42, 0.6);
+        border: 1px solid rgba(96, 165, 250, 0.18);
+        color: var(--text);
+        padding: 9px 12px;
+        font-size: 12px;
+        font-weight: 600;
+        border-radius: 10px;
+        appearance: none;
+        -webkit-appearance: none;
+        background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a5d4' stroke-width='2'><polyline points='6 9 12 15 18 9'></polyline></svg>");
+        background-repeat: no-repeat;
+        background-position: right 12px center;
+        padding-right: 32px;
+      }
     </style>
 
     <script>
@@ -185,7 +228,9 @@ export function desktopPositionsPage({ getPositionCardsLite, TROJAN_BOT }) {
       const pPrevBtn = document.getElementById('dp-prev');
       const pNextBtn = document.getElementById('dp-next');
       const pPageInfo = document.getElementById('dp-page-info');
+      const pSortSel = document.getElementById('dp-sort');
       let pFilter = 'all';
+      let pSort = 'newest';
       const P_PAGE_SIZE = 10;
       let pPage = 1;
 
@@ -200,8 +245,25 @@ export function desktopPositionsPage({ getPositionCardsLite, TROJAN_BOT }) {
         });
       }
 
+      function pSorted(items) {
+        const arr = items.slice();
+        const num = (el, key) => {
+          const v = Number(el.dataset[key]);
+          return Number.isFinite(v) ? v : 0;
+        };
+        switch (pSort) {
+          case 'oldest': arr.sort((a, b) => num(a, 'sortOpened') - num(b, 'sortOpened')); break;
+          case 'pnl_desc': arr.sort((a, b) => num(b, 'sortPnl') - num(a, 'sortPnl')); break;
+          case 'pnl_asc': arr.sort((a, b) => num(a, 'sortPnl') - num(b, 'sortPnl')); break;
+          case 'size_desc': arr.sort((a, b) => num(b, 'sortSize') - num(a, 'sortSize')); break;
+          case 'size_asc': arr.sort((a, b) => num(a, 'sortSize') - num(b, 'sortSize')); break;
+          default: arr.sort((a, b) => num(b, 'sortOpened') - num(a, 'sortOpened'));
+        }
+        return arr;
+      }
+
       function pRender() {
-        const filtered = pFiltered();
+        const filtered = pSorted(pFiltered());
         const totalPages = Math.max(1, Math.ceil(filtered.length / P_PAGE_SIZE));
         if (pPage > totalPages) pPage = totalPages;
         const start = (pPage - 1) * P_PAGE_SIZE;
@@ -221,6 +283,7 @@ export function desktopPositionsPage({ getPositionCardsLite, TROJAN_BOT }) {
         pPage = 1;
         pRender();
       }));
+      pSortSel.addEventListener('change', () => { pSort = pSortSel.value; pPage = 1; pRender(); });
       pPrevBtn.addEventListener('click', () => { if (pPage > 1) { pPage--; pRender(); window.scrollTo({ top: 0, behavior: 'smooth' }); } });
       pNextBtn.addEventListener('click', () => { pPage++; pRender(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
       pRender();
