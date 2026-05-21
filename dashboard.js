@@ -11,6 +11,9 @@ import { positionsPage as positionsPageView } from './src/dashboard/positions.js
 import { pnlPage as pnlPageView } from './src/dashboard/pnl.js';
 import { strategyPage as strategyPageView } from './src/dashboard/strategy.js';
 import { getEnabledStrategy as getEnabledStrategyDb, getPositions as getPositionsDb, getPositionCardsLite as getPositionCardsLiteDb, getPositionDetailById as getPositionDetailByIdDb } from './src/dashboard/db.js';
+import { isMobile } from './src/dashboard/detect.js';
+import { mobileCandidatesPage, mobilePositionsPage, mobilePnlPage, mobileStrategyPage } from './src/dashboard/mobile/index.js';
+import { desktopCandidatesPage, desktopPositionsPage, desktopPnlPage, desktopStrategyPage } from './src/dashboard/desktop/index.js';
 
 const HOST = process.env.CHARON_DASHBOARD_HOST || '127.0.0.1';
 const PORT = Number(process.env.CHARON_DASHBOARD_PORT || 20120);
@@ -1021,9 +1024,21 @@ const server = http.createServer(async (req, res) => {
         req,
       );
     }
-    if (u.pathname === '/strategy') return sendHtml(res, 200, strategyPage(), req);
-    if (u.pathname === '/candidates') return sendHtml(res, 200, candidatesPage(), req);
-    if (u.pathname === '/' || u.pathname === '/positions') return sendHtml(res, 200, positionsPage(), req);
+    if (u.pathname === '/strategy') {
+      if (isMobile(req)) return sendHtml(res, 200, mobileStrategyPage({ getEnabledStrategy }), req);
+      return sendHtml(res, 200, desktopStrategyPage({ getEnabledStrategy }), req);
+    }
+    if (u.pathname === '/candidates') {
+      if (isMobile(req)) return sendHtml(res, 200, mobileCandidatesPage({ getCandidates, getEnabledStrategy }), req);
+      return sendHtml(res, 200, desktopCandidatesPage({ getCandidates, getEnabledStrategy }), req);
+    }
+    if (u.pathname === '/pnl-mobile' || (u.pathname === '/pnl' && isMobile(req))) {
+      return sendHtml(res, 200, mobilePnlPage({ getPositionCardsLite }), req);
+    }
+    if (u.pathname === '/' || u.pathname === '/positions') {
+      if (isMobile(req)) return sendHtml(res, 200, mobilePositionsPage({ getPositionCardsLite, TROJAN_BOT }), req);
+      return sendHtml(res, 200, desktopPositionsPage({ getPositionCardsLite, TROJAN_BOT }), req);
+    }
 
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end('Not Found');

@@ -1,0 +1,329 @@
+/**
+ * Mobile candidates page — trading-app style with bottom nav.
+ */
+import { esc, fmtNum, fmtAgeSince, safeJson } from '../format.js';
+import { mobileShell } from './shell.js';
+
+function fmtCompact(n) {
+  if (n == null || !Number.isFinite(Number(n))) return '-';
+  const v = Number(n);
+  if (v >= 1_000_000) return '$' + (v / 1_000_000).toFixed(2) + 'M';
+  if (v >= 1_000) return '$' + (v / 1_000).toFixed(1) + 'k';
+  return '$' + Math.round(v);
+}
+
+function fmtCount(n) {
+  if (n == null || !Number.isFinite(Number(n))) return '-';
+  const v = Number(n);
+  if (v >= 1_000_000) return (v / 1_000_000).toFixed(1) + 'M';
+  if (v >= 1_000) return (v / 1_000).toFixed(1) + 'k';
+  return String(Math.round(v));
+}
+
+function healthClass(value, type) {
+  if (value == null) return 'h-na';
+  const v = Number(value);
+  if (!Number.isFinite(v)) return 'h-na';
+  if (type === 'top20') {
+    if (v <= 45) return 'h-good';
+    if (v <= 60) return 'h-warn';
+    return 'h-bad';
+  }
+  if (type === 'ath') {
+    if (v >= -40) return 'h-good';
+    if (v >= -70) return 'h-warn';
+    return 'h-bad';
+  }
+  return 'h-na';
+}
+
+export function mobileCandidatesPage({ getCandidates, getEnabledStrategy }) {
+  const rows = getCandidates(300);
+  const strategy = getEnabledStrategy();
+  const minSourceCount = Number(strategy?.config?.min_source_count ?? 0) || 0;
+  const stats = rows.reduce((acc, r) => {
+    acc.total++;
+    acc[r.status] = (acc[r.status] || 0) + 1;
+    return acc;
+  }, { total: 0 });
+
+  const cards = rows.map((r) => {
+    const cj = safeJson(r.candidate_json, {});
+    const fj = safeJson(r.filter_result_json, {});
+    const token = cj.token || {};
+    const metrics = cj.metrics || {};
+    const holders = cj.holders || {};
+    const chart = cj.chart || {};
+    const trending = cj.trending || {};
+    const fails = Array.isArray(fj.failures) ? fj.failures : [];
+    const sym = token.symbol || token.name || 'Unknown';
+
+    const mcap = metrics.marketCapUsd ?? metrics.market_cap ?? trending.market_cap;
+    const liq = metrics.liquidityUsd ?? trending.liquidity;
+    const vol = metrics.trendingVolumeUsd ?? metrics.volumeUsd ?? trending.volume;
+    const swaps = metrics.trendingSwaps ?? metrics.swaps;
+    const top20 = metrics.top20HolderPercent ?? holders.top20Percent;
+    const ath = chart.distanceFromAthPercent ?? chart.belowRangeHighPercent;
+
+    const activeSources = (() => {
+      const names = [];
+      if (cj?.signals?.hasFeeClaim) names.push('FEE');
+      if (cj?.signals?.hasGraduated) names.push('GRAD');
+      if (cj?.signals?.hasTrending) names.push('TREND');
+      return names;
+    })();
+
+    const top20Class = healthClass(top20, 'top20');
+    const athClass = healthClass(ath, 'ath');
+
+    const statusBadge = r.status === 'buy'
+      ? `<span class='mc-badge bg-buy'>BUY</span>`
+      : r.status === 'watch' ? `<span class='mc-badge bg-watch'>WATCH</span>`
+      : r.status === 'accepted' ? `<span class='mc-badge bg-acc'>ACC</span>`
+      : r.status === 'filtered' ? `<span class='mc-badge bg-filt'>FILT</span>`
+      : `<span class='mc-badge bg-new'>NEW</span>`;
+
+    const reasonBlock = (r.last_reason && (r.status === 'buy' || r.status === 'watch'))
+      ? `<div class='mc-reason'>
+          <div class='mc-reason-head'>${esc(r.last_verdict || '')} <span class='mc-reason-conf'>${r.last_confidence != null ? r.last_confidence + '%' : '-'}</span></div>
+          <div class='mc-reason-text'>${esc((r.last_reason || '').slice(0, 140))}</div>
+        </div>` : '';
+
+    const failsBlock = (fails.length && r.status === 'filtered')
+      ? `<div class='mc-fails'>${esc(fails.slice(0, 2).join(' · '))}</div>` : '';
+
+    return `<div class='mc-card' data-status='${esc(r.status)}'
+      data-mcap='${mcap == null ? '' : Number(mcap)}'
+      data-vol='${vol == null ? '' : Number(vol)}'
+      data-created='${r.created_at_ms || 0}'
+      data-symbol='${esc(sym)}'>
+      <div class='mc-top'>
+        <div class='mc-id'>
+          <div class='mc-sym'>${esc(sym)}</div>
+          <div class='mc-mint'>${esc(String(r.mint || '').slice(0, 6))}…${esc(String(r.mint || '').slice(-4))} · ${esc(fmtAgeSince(r.created_at_ms))}</div>
+        </div>
+        ${statusBadge}
+      </div>
+
+      <div class='mc-mcap-row'>
+        <span class='mc-mcap-val'>${fmtCompact(mcap)}</span>
+        ${activeSources.length ? `<span class='mc-srcs'>${activeSources.map(s => `<span class='mc-src mc-src-${s.toLowerCase()}'>${s}</span>`).join('')}</span>` : ''}
+      </div>
+
+      <div class='mc-metrics'>
+        <div><span class='mc-mk'>Liq</span><span class='mc-mv'>${fmtCompact(liq)}</span></div>
+        <div><span class='mc-mk'>Vol</span><span class='mc-mv'>${fmtCompact(vol)}</span></div>
+        <div><span class='mc-mk'>Swaps</span><span class='mc-mv'>${fmtCount(swaps)}</span></div>
+      </div>
+
+      <div class='mc-chips'>
+        <span class='mc-chip ${top20Class}'>Top20 ${top20 == null ? '-' : fmtNum(top20, 0) + '%'}</span>
+        <span class='mc-chip ${athClass}'>ATH ${ath == null ? '-' : fmtNum(ath, 0) + '%'}</span>
+      </div>
+
+      ${reasonBlock}
+      ${failsBlock}
+    </div>`;
+  }).join('');
+
+  const statTiles = `
+    <div class='m-stat'><div class='m-stat-label'>Total</div><div class='m-stat-value'>${stats.total || 0}</div></div>
+    <div class='m-stat'><div class='m-stat-label'>Buy</div><div class='m-stat-value up'>${stats.buy || 0}</div></div>
+    <div class='m-stat'><div class='m-stat-label'>Watch</div><div class='m-stat-value'>${stats.watch || 0}</div></div>
+    <div class='m-stat'><div class='m-stat-label'>Filt</div><div class='m-stat-value dn'>${stats.filtered || 0}</div></div>
+  `;
+
+  const body = `
+    <div class='m-filters'>
+      <button class='m-chip active' data-cf='all'>All</button>
+      <button class='m-chip' data-cf='buy'>Buy</button>
+      <button class='m-chip' data-cf='watch'>Watch</button>
+      <button class='m-chip' data-cf='accepted'>Accepted</button>
+      <button class='m-chip' data-cf='filtered'>Filtered</button>
+    </div>
+
+    <div id='mc-list'>${cards || `<div class='m-empty'><div class='m-empty-icon'>🎯</div>No candidates yet</div>`}</div>
+
+    <style>
+      .mc-card {
+        background: linear-gradient(180deg, rgba(15,23,42,0.8), rgba(15,23,42,0.5));
+        border: 1px solid rgba(96,165,250,0.12);
+        border-radius: 14px;
+        padding: 12px;
+        margin-bottom: 8px;
+      }
+      .mc-card[data-status='filtered'] { opacity: 0.65; }
+
+      .mc-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+      .mc-id { min-width: 0; flex: 1; }
+      .mc-sym {
+        font-size: 16px;
+        font-weight: 700;
+        color: var(--text);
+        line-height: 1.2;
+      }
+      .mc-mint {
+        font-size: 10px;
+        color: var(--muted);
+        margin-top: 2px;
+        font-family: ui-monospace, monospace;
+      }
+
+      .mc-badge {
+        flex-shrink: 0;
+        padding: 3px 8px;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.4px;
+        border-radius: 6px;
+      }
+      .bg-buy { background: rgba(34,197,94,0.18); color: #6ee7b7; border: 1px solid rgba(34,197,94,0.35); }
+      .bg-watch { background: rgba(245,158,11,0.18); color: #fcd34d; border: 1px solid rgba(245,158,11,0.35); }
+      .bg-acc { background: rgba(96,165,250,0.18); color: #93c5fd; border: 1px solid rgba(96,165,250,0.35); }
+      .bg-filt { background: rgba(148,165,212,0.1); color: var(--muted); border: 1px solid rgba(148,165,212,0.25); }
+      .bg-new { background: rgba(168,85,247,0.18); color: #d8b4fe; border: 1px solid rgba(168,85,247,0.35); }
+
+      .mc-mcap-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 8px 10px;
+        background: rgba(96,165,250,0.07);
+        border-radius: 10px;
+        margin-bottom: 8px;
+      }
+      .mc-mcap-val {
+        font-size: 18px;
+        font-weight: 700;
+        color: var(--text);
+      }
+      .mc-srcs { display: flex; gap: 3px; }
+      .mc-src {
+        display: inline-block;
+        padding: 2px 6px;
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.3px;
+        border-radius: 4px;
+      }
+      .mc-src-fee { background: #13294b; color: #bcd0ff; }
+      .mc-src-grad { background: #11301f; color: #9bf0c4; }
+      .mc-src-trend { background: #3a2510; color: #ffd7a8; }
+
+      .mc-metrics {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 6px;
+        margin-bottom: 8px;
+      }
+      .mc-metrics > div {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1px;
+        padding: 6px 4px;
+        background: rgba(255,255,255,0.02);
+        border-radius: 8px;
+      }
+      .mc-mk {
+        font-size: 9px;
+        font-weight: 600;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+      }
+      .mc-mv {
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--text);
+      }
+
+      .mc-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+      .mc-chip {
+        padding: 3px 7px;
+        font-size: 10px;
+        font-weight: 600;
+        border-radius: 5px;
+        border: 1px solid transparent;
+      }
+      .h-good { background: rgba(34,197,94,0.12); color: #6ee7b7; border-color: rgba(34,197,94,0.25); }
+      .h-warn { background: rgba(245,158,11,0.13); color: #fcd34d; border-color: rgba(245,158,11,0.3); }
+      .h-bad { background: rgba(239,68,68,0.13); color: #fca5a5; border-color: rgba(239,68,68,0.3); }
+      .h-na { background: rgba(148,165,212,0.08); color: var(--muted); border-color: rgba(148,165,212,0.18); }
+
+      .mc-reason {
+        margin-top: 8px;
+        padding: 8px 10px;
+        background: rgba(245,158,11,0.06);
+        border-left: 2px solid rgba(245,158,11,0.4);
+        border-radius: 6px;
+      }
+      .mc-reason-head {
+        font-size: 10px;
+        font-weight: 700;
+        color: #fcd34d;
+        letter-spacing: 0.4px;
+        margin-bottom: 3px;
+      }
+      .mc-reason-conf {
+        background: rgba(245,158,11,0.18);
+        padding: 1px 5px;
+        border-radius: 4px;
+        margin-left: 4px;
+      }
+      .mc-reason-text {
+        font-size: 11px;
+        color: var(--text);
+        line-height: 1.4;
+      }
+
+      .mc-fails {
+        margin-top: 6px;
+        padding: 6px 8px;
+        background: rgba(239,68,68,0.06);
+        border-left: 2px solid rgba(239,68,68,0.35);
+        border-radius: 6px;
+        font-size: 10px;
+        color: #fca5a5;
+        line-height: 1.4;
+      }
+    </style>
+
+    <script>
+      const cAll = Array.from(document.querySelectorAll('#mc-list .mc-card'));
+      const cListEl = document.getElementById('mc-list');
+      const cFilters = Array.from(document.querySelectorAll('.m-chip[data-cf]'));
+      let cFilter = 'all';
+
+      function cRender() {
+        const items = cAll.filter(el => cFilter === 'all' || el.dataset.status === cFilter);
+        cListEl.innerHTML = items.length
+          ? items.map(el => el.outerHTML).join('')
+          : '<div class="m-empty"><div class="m-empty-icon">🎯</div>No items for this filter</div>';
+      }
+
+      cFilters.forEach(b => b.addEventListener('click', () => {
+        cFilters.forEach(x => x.classList.remove('active'));
+        b.classList.add('active');
+        cFilter = b.dataset.cf;
+        cRender();
+      }));
+    </script>
+  `;
+
+  return mobileShell('Candidates', body, {
+    activePath: '/candidates',
+    stats: { tiles: statTiles },
+  });
+}
