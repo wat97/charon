@@ -120,6 +120,7 @@ export function desktopCandidatesPage({ getCandidates, getEnabledStrategy }) {
       <div class='dc-chips'>
         <span class='dc-chip ${top20Class}'>Top20 ${top20 == null ? '-' : fmtNum(top20, 0) + '%'}</span>
         <span class='dc-chip ${athClass}'>ATH ${ath == null ? '-' : fmtNum(ath, 0) + '%'}</span>
+        <span class='dc-chip h-na'>MinSrc ${minSourceCount}</span>
       </div>
 
       ${reasonBlock}

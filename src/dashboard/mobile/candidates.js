@@ -114,11 +114,13 @@ export function mobileCandidatesPage({ getCandidates, getEnabledStrategy }) {
         <div><span class='mc-mk'>Liq</span><span class='mc-mv'>${fmtCompact(liq)}</span></div>
         <div><span class='mc-mk'>Vol</span><span class='mc-mv'>${fmtCompact(vol)}</span></div>
         <div><span class='mc-mk'>Swaps</span><span class='mc-mv'>${fmtCount(swaps)}</span></div>
+        <div><span class='mc-mk'>Age</span><span class='mc-mv'>${fmtAgeSince(r.created_at_ms)}</span></div>
       </div>
 
       <div class='mc-chips'>
         <span class='mc-chip ${top20Class}'>Top20 ${top20 == null ? '-' : fmtNum(top20, 0) + '%'}</span>
         <span class='mc-chip ${athClass}'>ATH ${ath == null ? '-' : fmtNum(ath, 0) + '%'}</span>
+        <span class='mc-chip h-na'>MinSrc ${minSourceCount}</span>
       </div>
 
       ${reasonBlock}
@@ -238,7 +240,7 @@ export function mobileCandidatesPage({ getCandidates, getEnabledStrategy }) {
 
       .mc-metrics {
         display: grid;
-        grid-template-columns: 1fr 1fr 1fr;
+        grid-template-columns: repeat(2, 1fr);
         gap: 6px;
         margin-bottom: 8px;
       }
