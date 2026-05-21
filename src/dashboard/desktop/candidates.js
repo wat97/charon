@@ -91,6 +91,7 @@ export function desktopCandidatesPage({ getCandidates, getEnabledStrategy }) {
 
     const failsBlock = (fails.length && r.status === 'filtered')
       ? `<div class='dc-fails'>${esc(fails.slice(0, 3).join(' · '))}</div>` : '';
+    const gmgnUrl = r.mint ? `https://gmgn.ai/sol/token/${encodeURIComponent(r.mint)}` : '';
 
     return `<div class='dc-card' data-status='${esc(r.status)}'
       data-mcap='${mcap == null ? '' : Number(mcap)}'
@@ -122,6 +123,8 @@ export function desktopCandidatesPage({ getCandidates, getEnabledStrategy }) {
         <span class='dc-chip ${athClass}'>ATH ${ath == null ? '-' : fmtNum(ath, 0) + '%'}</span>
         <span class='dc-chip h-na'>MinSrc ${minSourceCount}</span>
       </div>
+
+      ${gmgnUrl ? `<div class='dc-actions'><a class='dc-link' href='${esc(gmgnUrl)}' target='_blank' rel='noopener noreferrer'>Open GMGN ↗</a></div>` : ''}
 
       ${reasonBlock}
       ${failsBlock}
@@ -324,6 +327,27 @@ export function desktopCandidatesPage({ getCandidates, getEnabledStrategy }) {
         color: #fca5a5;
         line-height: 1.4;
       }
+
+      .dc-actions {
+        margin-top: 10px;
+        display: flex;
+        gap: 8px;
+      }
+      .dc-link {
+        flex: 1;
+        text-align: center;
+        text-decoration: none;
+        padding: 8px 12px;
+        font-size: 12px;
+        font-weight: 700;
+        color: #93c5fd;
+        background: rgba(96,165,250,0.1);
+        border: 1px solid rgba(96,165,250,0.3);
+        border-radius: 8px;
+        letter-spacing: 0.3px;
+        transition: background 0.15s, border-color 0.15s;
+      }
+      .dc-link:hover { background: rgba(96,165,250,0.18); border-color: rgba(96,165,250,0.5); }
 
       .d-pager {
         display: flex;

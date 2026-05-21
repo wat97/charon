@@ -91,6 +91,7 @@ export function mobileCandidatesPage({ getCandidates, getEnabledStrategy }) {
 
     const failsBlock = (fails.length && r.status === 'filtered')
       ? `<div class='mc-fails'>${esc(fails.slice(0, 2).join(' · '))}</div>` : '';
+    const gmgnUrl = r.mint ? `https://gmgn.ai/sol/token/${encodeURIComponent(r.mint)}` : '';
 
     return `<div class='mc-card' data-status='${esc(r.status)}'
       data-mcap='${mcap == null ? '' : Number(mcap)}'
@@ -122,6 +123,8 @@ export function mobileCandidatesPage({ getCandidates, getEnabledStrategy }) {
         <span class='mc-chip ${athClass}'>ATH ${ath == null ? '-' : fmtNum(ath, 0) + '%'}</span>
         <span class='mc-chip h-na'>MinSrc ${minSourceCount}</span>
       </div>
+
+      ${gmgnUrl ? `<div class='mc-actions'><a class='mc-link' href='${esc(gmgnUrl)}' target='_blank' rel='noopener noreferrer'>Open GMGN ↗</a></div>` : ''}
 
       ${reasonBlock}
       ${failsBlock}
@@ -319,6 +322,26 @@ export function mobileCandidatesPage({ getCandidates, getEnabledStrategy }) {
         color: #fca5a5;
         line-height: 1.4;
       }
+
+      .mc-actions {
+        margin-top: 8px;
+        display: flex;
+        gap: 6px;
+      }
+      .mc-link {
+        flex: 1;
+        text-align: center;
+        text-decoration: none;
+        padding: 8px 10px;
+        font-size: 12px;
+        font-weight: 700;
+        color: #93c5fd;
+        background: rgba(96,165,250,0.1);
+        border: 1px solid rgba(96,165,250,0.3);
+        border-radius: 8px;
+        letter-spacing: 0.3px;
+      }
+      .mc-link:active { background: rgba(96,165,250,0.18); }
 
       .m-pager {
         display: flex;
