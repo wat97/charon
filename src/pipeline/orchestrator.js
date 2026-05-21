@@ -110,7 +110,24 @@ export async function processCandidateFromSignals(signals) {
     batchDecision.id = currentDecisionId;
   }
 
-  if (batchId) await sendBatchReveal(batchId, rows, batchDecision, candidateId);
+  if (batchId) {
+    try {
+      await sendBatchReveal(batchId, rows, batchDecision, candidateId);
+    } catch (error) {
+      console.log(`[telegram] batch reveal failed for #${batchId}: ${error?.message || error}`);
+      logDecisionEvent({
+        batchId,
+        triggerCandidateId: candidateId,
+        selectedRow,
+        rows,
+        decision: batchDecision,
+        action: 'batch_reveal_failed',
+        guardrails: {
+          error: String(error?.message || error),
+        },
+      });
+    }
+  }
 
   if (selectedRow && boolSetting('agent_enabled', true) && batchDecision.verdict === 'BUY' && batchDecision.confidence >= numSetting('llm_min_confidence', 75)) {
     if (!canOpenMorePositions()) {
